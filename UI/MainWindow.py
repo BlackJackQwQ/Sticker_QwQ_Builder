@@ -6,7 +6,8 @@ from typing import Optional
 
 # Core Imports
 from Core.Backend import StickerClient
-from Core.Logic import AppLogic
+# --- UPDATED IMPORT ---
+from Core.Logic.Controller import AppLogic
 from Core.Config import initialize_system_files, logger, BASE_DIR
 
 # Resource Imports
@@ -21,12 +22,9 @@ from Resources.Themes import THEME_PALETTES
 
 # UI Component Imports
 from UI.ViewUtils import COLORS, set_window_icon
-# --- CHANGED: Import the new Controller ---
 from UI.CardsPanel.Controller import CardManager
 from UI.Filters import FilterManager
 from UI.PopUpPanel.Controller import PopUpManager
-
-# --- CHANGED: Import the new Controller ---
 from UI.DetailPanel.Controller import DetailsController
 
 class StickerBotApp(ctk.CTk):
@@ -42,6 +40,7 @@ class StickerBotApp(ctk.CTk):
         
         # 1. Initialize Core Engines
         self.client = StickerClient(token="") 
+        # This now initializes the NEW Controller, which loads the sub-managers
         self.logic = AppLogic(self)
         self.logic.load_settings() 
         
@@ -111,7 +110,6 @@ class StickerBotApp(ctk.CTk):
         self.sidebar_container.grid_columnconfigure(0, weight=1)
         self.sidebar_container.grid_rowconfigure(0, weight=1)
         
-        # --- CHANGED: Use DetailsController ---
         self.details_manager = DetailsController(self, self.sidebar_container)
 
     def _build_main_display(self):

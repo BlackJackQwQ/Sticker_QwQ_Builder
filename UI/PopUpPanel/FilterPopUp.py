@@ -11,6 +11,9 @@ from Resources.Icons import (
 class FilterPopUp(BasePopUp):
     """
     Handles popups related to the Left Filter Panel (Tag Management).
+    Methods:
+    - open_tag_manager_modal: Edit tags for specific item(s).
+    - open_all_tags_modal: View global tag statistics.
     """
     def __init__(self, app):
         super().__init__(app)
@@ -24,7 +27,7 @@ class FilterPopUp(BasePopUp):
         Manages tags for Pack, Collection, or Sticker.
         Replaces the inline search bar in Details panel.
         """
-        # 1. Determine Context & Data
+        # 1. Determine Context & Data from the new Controller (self.app.logic)
         target_name = ""
         current_tags = []
         all_known_tags = []
@@ -45,6 +48,7 @@ class FilterPopUp(BasePopUp):
             
         elif context_type == "sticker":
             if not self.app.logic.selected_stickers: return
+            # Use the first selected sticker for name display
             target_name = self.app.logic.current_sticker_data.get('custom_name', 'Sticker')
             current_tags = self.app.logic.current_sticker_data.get('tags', [])
             all_known_tags = self.app.logic.sticker_tags_ac
@@ -72,14 +76,18 @@ class FilterPopUp(BasePopUp):
         def refresh_current_list():
             for w in current_scroll.winfo_children(): w.destroy()
             
-            # Re-fetch fresh list
+            # Re-fetch fresh list from logic
             fresh_tags = []
-            if context_type == "pack": fresh_tags = self.app.logic.current_pack_data.get('tags', [])
+            if context_type == "pack": 
+                fresh_tags = self.app.logic.current_pack_data.get('tags', [])
             elif context_type == "collection": 
                 r = self.app.logic.selected_collection_data['packs'][0]
                 fresh_tags = r.get('custom_collection_tags', [])
             elif context_type == "sticker":
-                fresh_tags = self.app.logic.current_sticker_data.get('tags', [])
+                # For stickers, we check the main selection. 
+                # (Logic.add_tag_manual handles batch updates, but we display the primary one here)
+                if self.app.logic.selected_stickers:
+                    fresh_tags = self.app.logic.current_sticker_data.get('tags', [])
             
             if not fresh_tags:
                 ctk.CTkLabel(current_scroll, text="No tags assigned.", text_color=COLORS["text_sub"]).pack(pady=20)
@@ -100,7 +108,11 @@ class FilterPopUp(BasePopUp):
                         row, text=f"{ICON_REMOVE}", width=30, height=24,
                         fg_color=COLORS["btn_negative"], hover_color=COLORS["btn_negative_hover"], text_color=COLORS["text_on_negative"],
                         # Call logic to remove, then refresh both lists in this modal
-                        command=lambda t=tag: [self.app.logic.confirm_remove_tag(context_type, t), refresh_current_list(), refresh_add_list(search_entry.get())]
+                        command=lambda t=tag: [
+                            self.app.logic.confirm_remove_tag(context_type, t), 
+                            refresh_current_list(), 
+                            refresh_add_list(search_entry.get())
+                        ]
                     ).pack(side="right", padx=10)
 
         # ==========================
@@ -145,13 +157,16 @@ class FilterPopUp(BasePopUp):
             for w in add_scroll.winfo_children(): w.destroy()
             query = query.lower()
             
+            # Re-read current set to exclude already added tags
             current_set = set()
-            if context_type == "pack": current_set = set(self.app.logic.current_pack_data.get('tags', []))
+            if context_type == "pack": 
+                current_set = set(self.app.logic.current_pack_data.get('tags', []))
             elif context_type == "collection":
                 r = self.app.logic.selected_collection_data['packs'][0]
                 current_set = set(r.get('custom_collection_tags', []))
             elif context_type == "sticker":
-                current_set = set(self.app.logic.current_sticker_data.get('tags', []))
+                if self.app.logic.current_sticker_data:
+                    current_set = set(self.app.logic.current_sticker_data.get('tags', []))
 
             # Filter Available
             candidates = [t for t in all_known_tags if not is_system_tag(t) and t not in current_set]
@@ -218,6 +233,7 @@ class FilterPopUp(BasePopUp):
             if not win.winfo_exists(): return
             for w in scroll.winfo_children(): w.destroy()
             
+            # Delegate to Controller -> Filters.get_tag_usage()
             usage = self.app.logic.get_tag_usage()
             q = search_var.get().lower()
             
@@ -240,8 +256,18 @@ class FilterPopUp(BasePopUp):
                 
                 btns = ctk.CTkFrame(row, fg_color="transparent")
                 btns.pack(side="right", padx=5)
-                ctk.CTkButton(btns, text=f"{ICON_ADD}", width=28, fg_color=COLORS["btn_positive"], command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Include"), win.destroy()]).pack(side="left", padx=2)
-                ctk.CTkButton(btns, text="-", width=28, fg_color=COLORS["btn_negative"], command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Exclude"), win.destroy()]).pack(side="left", padx=2)
+                
+                # Filter Include
+                ctk.CTkButton(
+                    btns, text=f"{ICON_ADD}", width=28, fg_color=COLORS["btn_positive"], 
+                    command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Include"), win.destroy()]
+                ).pack(side="left", padx=2)
+                
+                # Filter Exclude
+                ctk.CTkButton(
+                    btns, text="-", width=28, fg_color=COLORS["btn_negative"], 
+                    command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Exclude"), win.destroy()]
+                ).pack(side="left", padx=2)
 
         rebuild()
         search_var.trace_add("write", rebuild)

@@ -25,7 +25,8 @@ class DetailsController:
         self.loader = AsyncLoader(app)
         
         # --- 2. LAYOUTS (THE SKELETON) ---
-        # We pass 'self' (controller) or 'self.loader' so layouts can use the engine.
+        # We pass 'self.app' and 'self.loader' so layouts can use the engine.
+        # Layouts are instantiated here but kept hidden until needed.
         self.pack_layout = PackLayout(self.app, self.container, self.loader)
         self.collection_layout = CollectionLayout(self.app, self.container, self.loader)
         self.sticker_layout = StickerLayout(self.app, self.container, self.loader)

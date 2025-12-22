@@ -27,7 +27,7 @@ def launch_app():
         print("  Sticker_Manager/")
         print("  ├── Main.py")
         print("  └── UI/")
-        print("      └── MainWindow.py (formerly Run.py)\n")
+        print("      └── MainWindow.py")
         input("Press Enter to exit...")
         return
 
