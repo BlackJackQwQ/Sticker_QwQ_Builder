@@ -51,8 +51,9 @@ class BaseLayout:
         self.image_frame = ctk.CTkFrame(parent, fg_color=COLORS["transparent"], corner_radius=12)
         self.image_frame.pack(fill="x", pady=(0, 10), padx=20)
         
+        # Initial State: Placeholder Text
         self.image_label = ctk.CTkLabel(
-            self.image_frame, text="", 
+            self.image_frame, text="Select Item", 
             text_color=COLORS["text_placeholder"], 
             fg_color=COLORS["transparent"]
         )
@@ -74,8 +75,14 @@ class BaseLayout:
 
     def _reset_image_label(self):
         """Clears the image label to prevent ghosting when switching views."""
-        if self.image_label:
-            self.image_label.configure(image=None, text="")
+        if self.image_label and self.image_label.winfo_exists():
+            try:
+                # FIX: Wrap in try/except to catch "image doesn't exist" TclError
+                self.image_label.configure(image=None, text="Loading...", text_color=COLORS["text_sub"])
+            except Exception:
+                # Fallback: Sometimes just setting text works if image kwarg fails
+                try: self.image_label.configure(text="Loading...")
+                except: pass
 
 
 class PackLayout(BaseLayout):
@@ -160,8 +167,14 @@ class PackLayout(BaseLayout):
              except: pass
         
         self.current_img_path = thumb
-        # Force initial load
-        self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
+        
+        # Explicit check for missing file to show "Broken" state immediately
+        if thumb and not Path(thumb).exists():
+             try:
+                self.image_label.configure(image=None, text="⚠️ File Missing", text_color=COLORS["btn_negative"])
+             except: pass
+        else:
+             self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
 
         # 2. Texts
         self.title_lbl.configure(text=data.get("name", "Unknown"))
@@ -263,7 +276,12 @@ class CollectionLayout(BaseLayout):
              except: pass
 
         self.current_img_path = thumb
-        self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
+        if thumb and not Path(thumb).exists():
+             try:
+                self.image_label.configure(image=None, text="⚠️ File Missing", text_color=COLORS["btn_negative"])
+             except: pass
+        else:
+             self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
 
         self.title_lbl.configure(text=data['name'])
         self.title_lbl.pack(fill="x")
@@ -387,7 +405,14 @@ class StickerLayout(BaseLayout):
             # Image
             self.current_img_path = path
             self._reset_image_label()
-            self.loader.request_image_load(path, self.image_label, self.image_frame.winfo_width(), load_id)
+            
+            # Explicit check for missing file here too
+            if path and not Path(path).exists():
+                 try:
+                    self.image_label.configure(image=None, text="⚠️ File Missing", text_color=COLORS["btn_negative"])
+                 except: pass
+            else:
+                 self.loader.request_image_load(path, self.image_label, self.image_frame.winfo_width(), load_id)
             
             # Metadata
             self.name_lbl.configure(text=data.get('custom_name') or f"Sticker {idx+1}")

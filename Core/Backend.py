@@ -81,6 +81,9 @@ class StickerClient:
         except requests.RequestException as e:
             logger.error(f"Network Connection Error: {e}")
             return None
+        except Exception as e:
+            logger.error(f"Unexpected API Error (Decoder/Logic): {e}")
+            return None
 
     def download_pack(self, pack_name: str, stickers: List[Dict[str, Any]], progress_callback: Optional[Callable[[int, int], None]] = None) -> Optional[Path]:
         """
@@ -109,7 +112,7 @@ class StickerClient:
                     completed += 1
                     if progress_callback: progress_callback(completed, total)
                 except Exception as e:
-                    logger.error(f"Thread Error: {e}")
+                    logger.error(f"Thread Execution Error: {e}")
 
         return base_path
 
@@ -163,9 +166,11 @@ class StickerClient:
                     if "Animated" not in sticker['tags']: sticker['tags'].append("Animated")
                     
                     if image.format != 'GIF':
-                        try: image.save(output_path, "GIF", save_all=True, loop=0)
-                        except: 
-                            # Fallback if conversion fails
+                        try: 
+                            image.save(output_path, "GIF", save_all=True, loop=0)
+                        except Exception as e: 
+                            # Fallback if conversion fails, log it
+                            logger.warning(f"GIF conversion failed for sticker {index}, saving raw bytes: {e}")
                             with open(output_path, 'wb') as f: f.write(img_response.content)
                     else:
                         image.save(output_path)
@@ -182,6 +187,7 @@ class StickerClient:
     # ==========================================================================
 
     def save_library(self, data: List[Dict[str, Any]], filename: str = LIBRARY_FILE):
+        # Calls the thread-safe version in Core/Config.py
         save_json(data, filename)
 
     def load_library(self, filename: str = LIBRARY_FILE) -> List[Dict[str, Any]]:

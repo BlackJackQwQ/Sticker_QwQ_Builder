@@ -1,12 +1,12 @@
 import customtkinter as ctk
 import sys
 import os
+import threading
 from pathlib import Path
 from typing import Optional
 
 # Core Imports
 from Core.Backend import StickerClient
-# --- UPDATED IMPORT ---
 from Core.Logic.Controller import AppLogic
 from Core.Config import initialize_system_files, logger, BASE_DIR
 
@@ -40,7 +40,6 @@ class StickerBotApp(ctk.CTk):
         
         # 1. Initialize Core Engines
         self.client = StickerClient(token="") 
-        # This now initializes the NEW Controller, which loads the sub-managers
         self.logic = AppLogic(self)
         self.logic.load_settings() 
         
@@ -49,9 +48,8 @@ class StickerBotApp(ctk.CTk):
         self.geometry("1100x750")
         self.minsize(800, 600)
         
-        # 3. Theme Setup (Initial)
+        # 3. Theme Setup
         self.current_theme = "Classic" 
-        # Note: logic.load_settings() usually overrides this and calls refresh_theme
         self.configure(fg_color=COLORS.get("bg_main", "#202020")) 
         
         self.after(200, lambda: set_window_icon(self))
@@ -62,9 +60,8 @@ class StickerBotApp(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)
 
         # --- VIEW STATE ---
-        # Modes: 'library', 'collection', 'gallery_pack', 'gallery_collection'
         self.view_mode = "library" 
-        self.view_stack = [] # History for Back Button: [(mode, title_text), ...]
+        self.view_stack = []
         self.current_layout_mode = "Large"
         
         self.left_sidebar_visible = True
@@ -83,14 +80,39 @@ class StickerBotApp(ctk.CTk):
         self._build_main_display()
         self._build_detail_sidebar()
         
-        # 5. Load Data
-        self.logic.load_library_data()
+        # 5. ASYNC BOOTSTRAP (Performance Fix)
+        # Instead of blocking the UI to load data, we schedule it.
+        self.after(100, self._start_background_loading)
+
+    def _start_background_loading(self):
+        """Starts the library loading in a separate thread to prevent UI freeze."""
+        self.update_status_bar("Loading Library...", 0.1)
+        
+        # Show a temporary loading spinner/text in the canvas
+        self.loading_label = ctk.CTkLabel(self.main_frame, text="Loading Library...", font=FONT_BIG_HEADER, text_color=COLORS["text_sub"])
+        self.loading_label.place(relx=0.5, rely=0.5, anchor="center")
+        
+        def load_task():
+            # Heavy IO operation
+            self.logic.load_library_data()
+            # Once done, schedule UI update on main thread
+            self.after(0, self._on_loading_complete)
+            
+        threading.Thread(target=load_task, daemon=True).start()
+
+    def _on_loading_complete(self):
+        """Called when data is ready."""
+        if hasattr(self, 'loading_label'):
+            self.loading_label.destroy()
+            
+        self.update_status_bar("Ready")
         
         if not self.client.token:
             self.after(500, lambda: self.popup_manager.open_settings_modal())
-
-        self.update_idletasks()
-        self.after(100, lambda: self.change_layout_mode("Large"))
+            
+        # Initial layout render
+        self.change_layout_mode("Large")
+        self.refresh_view()
 
     # ==========================================================================
     #   LAYOUT CONSTRUCTION
@@ -461,7 +483,7 @@ class StickerBotApp(ctk.CTk):
             # Calculate height maintaining aspect ratio mostly, but clamped
             new_height = int(col_width * 0.75) + 85 - (CARD_PADDING * 2)
             
-            # CRITICAL FIX: Enforce min heights based on mode to prevent "weird third size"
+            # CRITICAL FIX: Enforce min heights based on mode to prevent "weird" squeezed sizes
             min_h = 180 if self.current_layout_mode == "Large" else 140
             if new_height < min_h: new_height = min_h
             

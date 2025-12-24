@@ -166,11 +166,21 @@ class CardUtils:
 
     def load_image_to_label(self, label_widget: ctk.CTkLabel, image_path: Optional[str], size: Tuple[int, int], placeholder_text: str = "", add_overlay: bool = False):
         if not image_path:
-            if placeholder_text and label_widget.winfo_exists(): label_widget.configure(text=placeholder_text)
+            if placeholder_text and label_widget.winfo_exists(): 
+                # Reset to placeholder state with normal text color
+                try:
+                    label_widget.configure(image=None, text=placeholder_text, text_color=COLORS["text_sub"])
+                except Exception:
+                    # Catch TclError if image=None fails (transient state issue)
+                    try: label_widget.configure(text=placeholder_text)
+                    except: pass
             return
 
         if image_path.lower().endswith(('.webm', '.mp4', '.mkv')):
-             if label_widget.winfo_exists(): label_widget.configure(text="VIDEO")
+             if label_widget.winfo_exists(): 
+                 try:
+                    label_widget.configure(image=None, text="VIDEO", text_color=COLORS["text_sub"])
+                 except: pass
              return
 
         if add_overlay:
@@ -179,8 +189,11 @@ class CardUtils:
             def on_ready(ctk_img):
                 try:
                     if label_widget.winfo_exists():
-                        if ctk_img: label_widget.configure(image=ctk_img, text="")
-                        elif placeholder_text: label_widget.configure(text=placeholder_text)
+                        if ctk_img: 
+                            label_widget.configure(image=ctk_img, text="")
+                        else:
+                            # POLISH: Show "Broken" state (Red Warning Icon) if loading failed
+                            label_widget.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"])
                 except: pass
             AsyncImageLoader.load(image_path, size, on_ready)
 
@@ -191,7 +204,9 @@ class CardUtils:
             pil_img = self._apply_play_overlay(pil_img)
             ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
             self.app.after(0, lambda: label_widget.configure(image=ctk_img, text="") if label_widget.winfo_exists() else None)
-        except: pass
+        except Exception:
+            # POLISH: Visual Feedback
+            self.app.after(0, lambda: label_widget.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"]) if label_widget.winfo_exists() else None)
 
     def animate_card(self, card: ctk.CTkFrame, path: str, size: Tuple[int, int], label: ctk.CTkLabel):
         """Dispatches animation task."""
@@ -241,7 +256,8 @@ class CardUtils:
         if frames:
             self.app.after(0, lambda: self._start_animation_loop(card, frames, 50, label))
         else:
-            self.app.after(0, lambda: label.configure(text="ERR"))
+            # POLISH: Visual Feedback for video failure
+            self.app.after(0, lambda: label.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"]))
 
     def _start_animation_loop(self, card, frames, duration, label):
         def loop(idx):

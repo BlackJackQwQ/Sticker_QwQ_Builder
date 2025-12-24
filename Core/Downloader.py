@@ -42,8 +42,9 @@ class DownloadManager:
 
     def _worker_loop(self):
         """Main loop that processes the queue."""
-        from UI.ViewUtils import ToastNotification # Import UI helpers inside thread to avoid cycles
-
+        # Import UI helpers inside thread to avoid circular imports during startup
+        # (This is safe because _worker_loop runs after App init)
+        
         while self.queue:
             self.packs_processed += 1
             task = self.queue.pop(0)
@@ -57,8 +58,9 @@ class DownloadManager:
                 elif task["type"] == "update":
                     self._process_existing_pack(task["payload"], queue_status)
             except Exception as e:
-                logger.error(f"Queue Error: {e}")
-                self._safe_toast("Error", f"Queue failed: {str(e)}")
+                # CRITICAL FIX: Log the full error stack trace for debugging
+                logger.error(f"Critical Queue Worker Error: {e}", exc_info=True)
+                self._safe_toast("Queue Error", f"Process failed: {str(e)}")
         
         # Finished Batch
         self.is_running = False
@@ -74,112 +76,131 @@ class DownloadManager:
         """Step 1: Fetch Metadata -> Step 2: Download Files"""
         self._safe_status(f"{prefix} Fetching Metadata: {url}")
         
-        # 1. Fetch Metadata via Backend
-        data = self.app.client.get_pack_by_name(url)
-        
-        if not data:
-            self._safe_toast("Failed", f"Invalid Pack: {url}")
-            return
+        try:
+            # 1. Fetch Metadata via Backend
+            data = self.app.client.get_pack_by_name(url)
+            
+            if not data:
+                logger.warning(f"Metadata fetch failed for URL: {url}")
+                self._safe_toast("Failed", f"Invalid Pack or API Error: {url}")
+                return
 
-        # 2. Check Duplicates
-        if any(p.get('t_name') == data.get('name') for p in self.app.library_data):
-            self._safe_toast("Skipped", f"Already exists: {data.get('title')}")
-            return
+            # 2. Check Duplicates
+            # Using 't_name' (telegram unique name) to prevent duplicate folders
+            if any(p.get('t_name') == data.get('name') for p in self.app.library_data):
+                logger.info(f"Pack already exists: {data.get('name')}")
+                self._safe_toast("Skipped", f"Already exists: {data.get('title')}")
+                return
 
-        # 3. Create Database Entry
-        new_pack = {
-            "name": data["title"], 
-            "count": len(data["stickers"]), 
-            "color": "gray",
-            "t_name": data["name"], 
-            "url": f"t.me/addstickers/{data['name']}",
-            "stickers": data["stickers"], 
-            "added": datetime.now().strftime("%Y-%m-%d"),
-            "updated": datetime.now().strftime("%Y-%m-%d"), 
-            "downloaded": False, 
-            "tags": [], 
-            "is_favorite": False, 
-            "linked_packs": []
-        }
-        
-        # Auto-tagging based on Emoji
-        for s in new_pack['stickers']:
-            s['tags'] = []
-            emoji = s.get('emoji')
-            if emoji:
-                emoji = emoji.strip()
-                try:
-                    name = unicodedata.name(emoji[0]).title()
-                    tag_str = f"{emoji} - {name}"
-                except Exception:
-                    tag_str = emoji 
-                s['tags'].append(tag_str)
-            s['usage_count'] = 0
-            s['is_favorite'] = False
+            # 3. Create Database Entry
+            new_pack = {
+                "name": data["title"], 
+                "count": len(data["stickers"]), 
+                "color": "gray",
+                "t_name": data["name"], 
+                "url": f"t.me/addstickers/{data['name']}",
+                "stickers": data["stickers"], 
+                "added": datetime.now().strftime("%Y-%m-%d"),
+                "updated": datetime.now().strftime("%Y-%m-%d"), 
+                "downloaded": False, 
+                "tags": [], 
+                "is_favorite": False, 
+                "linked_packs": []
+            }
+            
+            # Auto-tagging based on Emoji
+            for s in new_pack['stickers']:
+                s['tags'] = []
+                emoji = s.get('emoji')
+                if emoji:
+                    emoji = emoji.strip()
+                    try:
+                        name = unicodedata.name(emoji[0]).title()
+                        tag_str = f"{emoji} - {name}"
+                    except Exception:
+                        tag_str = emoji 
+                    s['tags'].append(tag_str)
+                s['usage_count'] = 0
+                s['is_favorite'] = False
 
-        # Add to Library immediately
-        self.app.library_data.append(new_pack)
-        self.app.client.save_library(self.app.library_data)
-        
-        # Refresh UI (Thread-Safe Call)
-        self.app.after(0, self.app.refresh_view)
-        
-        # 4. Download Content
-        self._process_existing_pack(new_pack, prefix)
+            # Add to Library immediately
+            # NOTE: Thread-safety is now handled by Core.Config.save_json lock
+            self.app.library_data.append(new_pack)
+            self.app.client.save_library(self.app.library_data)
+            
+            # Refresh UI (Thread-Safe Call)
+            self.app.after(0, self.app.refresh_view)
+            
+            # 4. Download Content
+            self._process_existing_pack(new_pack, prefix)
+
+        except Exception as e:
+            logger.error(f"Error processing new pack '{url}': {e}", exc_info=True)
+            self._safe_toast("Error", f"Failed to add pack: {url}")
 
     def _process_existing_pack(self, pack_obj: Dict[str, Any], prefix: str):
         """Downloads the actual images for a known pack object."""
-        name = pack_obj['name']
-        t_name = pack_obj['t_name']
+        name = pack_obj.get('name', 'Unknown')
+        t_name = pack_obj.get('t_name', 'Unknown')
         
-        # Custom callback to show "Pack X/Y" AND "Sticker A/B"
-        def update_prog(curr, total):
-            pct = curr / total if total > 0 else 0
-            # Display: [Pack 1/5] Downloading 'Name': Sticker 10/50
-            msg = f"{prefix} Downloading '{name}': Sticker {curr}/{total}"
-            self._safe_status(msg, pct)
+        try:
+            # Custom callback to show "Pack X/Y" AND "Sticker A/B"
+            def update_prog(curr, total):
+                pct = curr / total if total > 0 else 0
+                msg = f"{prefix} Downloading '{name}': Sticker {curr}/{total}"
+                self._safe_status(msg, pct)
 
-        # Call the heavy network function in Backend
-        path = self.app.client.download_pack(t_name, pack_obj['stickers'], progress_callback=update_prog)
-        
-        if not path:
-             self._safe_toast("Error", f"Download failed for {name}")
-             return
-             
-        pack_obj['downloaded'] = True
-        
-        # Post-Process: Check file types to tag 'Static' vs 'Animated'
-        path_obj = Path(path)
-        for i, s in enumerate(pack_obj['stickers']):
-            webp_p = path_obj / f"sticker_{i}.webp"
-            gif_p = path_obj / f"sticker_{i}.gif"
+            # Call the heavy network function in Backend
+            path = self.app.client.download_pack(t_name, pack_obj['stickers'], progress_callback=update_prog)
             
-            if webp_p.exists():
-                if "Static" not in s['tags']: s['tags'].append("Static")
-            elif gif_p.exists():
-                 if "Animated" not in s['tags']: s['tags'].append("Animated")
+            if not path:
+                 logger.error(f"Download returned no path for {t_name}")
+                 self._safe_toast("Error", f"Download failed for {name}")
+                 return
+                 
+            pack_obj['downloaded'] = True
+            
+            # Post-Process: Check file types to tag 'Static' vs 'Animated'
+            path_obj = Path(path)
+            if path_obj.exists():
+                for i, s in enumerate(pack_obj['stickers']):
+                    webp_p = path_obj / f"sticker_{i}.webp"
+                    gif_p = path_obj / f"sticker_{i}.gif"
+                    
+                    if webp_p.exists():
+                        if "Static" not in s['tags']: s['tags'].append("Static")
+                    elif gif_p.exists():
+                         if "Animated" not in s['tags']: s['tags'].append("Animated")
 
-        # Set Thumbnail
-        if not pack_obj.get('thumbnail_path') and path_obj.exists():
-            valid_exts = {'.png', '.gif', '.webp'}
-            imgs = [p.name for p in path_obj.iterdir() if p.suffix.lower() in valid_exts]
-            if imgs: 
-                pack_obj['temp_thumbnail'] = str(path_obj / random.choice(imgs))
+                # Set Thumbnail if missing
+                if not pack_obj.get('thumbnail_path'):
+                    valid_exts = {'.png', '.gif', '.webp'}
+                    try:
+                        imgs = [p.name for p in path_obj.iterdir() if p.suffix.lower() in valid_exts]
+                        if imgs: 
+                            pack_obj['temp_thumbnail'] = str(path_obj / random.choice(imgs))
+                    except Exception as e:
+                        logger.warning(f"Thumbnail selection error: {e}")
 
-        self.app.client.save_library(self.app.library_data)
-        
-        # Finalize
-        self._safe_toast("Complete", f"Ready: {name}")
-        
-        # Refresh logic
-        self.app.after(0, lambda: self.app.logic.apply_filters())
-        self.app.after(0, self.app.refresh_view)
+            self.app.client.save_library(self.app.library_data)
+            
+            # Finalize
+            self._safe_toast("Complete", f"Ready: {name}")
+            
+            # Refresh logic
+            self.app.after(0, lambda: self.app.logic.apply_filters())
+            self.app.after(0, self.app.refresh_view)
+
+        except Exception as e:
+            logger.error(f"Error downloading pack '{name}': {e}", exc_info=True)
+            self._safe_toast("Error", f"Download crashed for {name}")
 
     # ==========================================================================
     #   THREAD-SAFE UI HELPERS
     # ==========================================================================
     
     def _safe_toast(self, title, msg):
+        # Import inside function to prevent circular dependency
         from UI.ViewUtils import ToastNotification
         self.app.after(0, lambda: ToastNotification(self.app, title, msg))
 

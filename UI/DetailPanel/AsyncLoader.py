@@ -99,7 +99,9 @@ class AsyncLoader:
                 # Peek for animation frames
                 with Image.open(path) as test:
                     if getattr(test, "is_animated", False): is_anim = True
-        except: pass
+        except Exception as e:
+            # Log warning but continue (fallback to static)
+            logger.warning(f"Failed to check animation status for {path}: {e}")
 
         if is_anim:
             if label_widget.winfo_exists(): 
@@ -116,6 +118,8 @@ class AsyncLoader:
         img = load_ctk_image(path, size_tuple)
         if img and label_widget.winfo_exists():
             label_widget.configure(image=img, text="")
+        elif label_widget.winfo_exists():
+            label_widget.configure(text="⚠ Load Failed")
 
     # ==========================================================================
     #   WORKERS (Run in Background Threads)
@@ -167,18 +171,22 @@ class AsyncLoader:
                     f = frame.copy()
                     f.thumbnail(size, Image.Resampling.LANCZOS)
                     pil_frames.append(f)
-        except: pass
+        except Exception as e:
+             logger.error(f"GIF load error ({path}): {e}")
 
         if pil_frames and self._current_load_id == req_id:
             self.app.after(0, lambda: self._finalize_frames(pil_frames, duration, callback))
 
     def _finalize_frames(self, pil_frames, duration, callback):
         """Converts PIL to CTkImage on Main Thread."""
-        final_frames = []
-        for p in pil_frames:
-            w, h = p.size
-            final_frames.append(ctk.CTkImage(light_image=p, dark_image=p, size=(w, h)))
-        callback(final_frames, duration)
+        try:
+            final_frames = []
+            for p in pil_frames:
+                w, h = p.size
+                final_frames.append(ctk.CTkImage(light_image=p, dark_image=p, size=(w, h)))
+            callback(final_frames, duration)
+        except Exception as e:
+            logger.error(f"Frame finalization error: {e}")
 
     # ==========================================================================
     #   ANIMATION LOOP
@@ -199,6 +207,8 @@ class AsyncLoader:
                     duration, 
                     lambda: animate((idx + 1) % len(frames))
                 )
-            except: pass
+            except Exception as e:
+                # Common if widget is destroyed mid-update
+                logger.debug(f"Animation loop stopped: {e}")
             
         animate(0)

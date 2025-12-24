@@ -94,7 +94,8 @@ class AsyncImageLoader:
                 img = future.result()
                 if img: _IMAGE_CACHE[cache_key] = img
                 callback_on_complete(img)
-            except Exception:
+            except Exception as e:
+                logger.error(f"Async load callback error: {e}")
                 callback_on_complete(None)
 
         future = cls._executor.submit(_load_task)
@@ -115,7 +116,8 @@ def load_ctk_image(path: str, size: Tuple[int, int]) -> Optional[ctk.CTkImage]:
             ctk_img = ctk.CTkImage(light_image=pil_copy, size=size)
             _IMAGE_CACHE[cache_key] = ctk_img
             return ctk_img
-    except Exception:
+    except Exception as e:
+        logger.error(f"Sync load error ({path}): {e}")
         return None
 
 def load_video_frames(path: str, size: Tuple[int, int], max_frames: int = 120) -> List[ctk.CTkImage]:
@@ -247,7 +249,8 @@ def copy_to_clipboard(path: str):
     try:
         # Use PowerShell to set the clipboard to the FILE object (allowing paste into Discord/Telegram)
         subprocess.run(f'powershell -command "Get-Item \'{path}\' | Set-Clipboard"', shell=True, check=True)
-    except Exception: pass
+    except Exception as e: 
+        logger.error(f"Clipboard copy failed: {e}")
 
 # ==============================================================================
 #   TEXT FORMATTERS

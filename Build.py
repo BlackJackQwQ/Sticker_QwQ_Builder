@@ -9,30 +9,48 @@ from pathlib import Path
 # Configuration
 APP_NAME = "Sticker_QwQ_Manager"
 MAIN_SCRIPT = "Main.py" 
-# ADDED: opencv-python for WebM support
-REQUIRED_PACKAGES = ['pyinstaller', 'customtkinter', 'pillow', 'requests', 'opencv-python']
 
-def check_and_install_dependencies():
+# Map package names (pip) to import names (python)
+# Format: 'pip-package-name': 'python-import-name'
+DEPENDENCY_MAP = {
+    'pyinstaller': 'PyInstaller',
+    'customtkinter': 'customtkinter',
+    'pillow': 'PIL',
+    'requests': 'requests',
+    'opencv-python': 'cv2'
+}
+
+def check_dependencies():
     print(f"\n{'='*50}")
-    print("STEP 1: CHECKING DEPENDENCIES")
+    print("STEP 1: VERIFYING DEPENDENCIES")
     print(f"{'='*50}")
     
-    for package in REQUIRED_PACKAGES:
-        # Handle import name differences (e.g., pillow -> PIL, opencv-python -> cv2)
-        import_name = package
-        if package == "pillow": import_name = "PIL"
-        if package == "opencv-python": import_name = "cv2"
-        
+    missing = []
+    
+    for package, import_name in DEPENDENCY_MAP.items():
         if importlib.util.find_spec(import_name) is None:
-            print(f"⚠️  '{package}' not found. Installing...")
-            try:
-                subprocess.check_call([sys.executable, "-m", "pip", "install", package])
-                print(f"✅ '{package}' installed.")
-            except subprocess.CalledProcessError:
-                print(f"❌ Failed to install '{package}'. Please install it manually.")
-                sys.exit(1)
+            print(f"❌ Missing: {package}")
+            missing.append(package)
         else:
-            print(f"✅ '{package}' is ready.")
+            print(f"✅ Found: {package}")
+            
+    if missing:
+        print(f"\n{'!'*50}")
+        print("ERROR: MISSING DEPENDENCIES")
+        print(f"{'!'*50}")
+        print("The following packages are required but not installed:")
+        for m in missing:
+            print(f" - {m}")
+            
+        print("\nPlease run the following command to install them:")
+        print("pip install -r requirements.txt")
+        print("\nOr install them manually:")
+        print(f"pip install {' '.join(missing)}")
+        
+        print("\nExiting build process.")
+        sys.exit(1)
+        
+    print("\nAll dependencies look good!")
 
 def clean_previous_builds():
     print(f"\n{'='*50}")
@@ -119,7 +137,7 @@ def create_launcher():
     print(f"📂 Output Location: {dist_dir.absolute()}")
 
 if __name__ == "__main__":
-    check_and_install_dependencies()
+    check_dependencies()
     clean_previous_builds()
     run_pyinstaller()
     create_launcher()
