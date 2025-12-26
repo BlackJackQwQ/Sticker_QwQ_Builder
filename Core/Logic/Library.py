@@ -2,7 +2,7 @@ import customtkinter as ctk
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 
-from Core.Config import save_json, logger
+from Core.Config import save_json, load_json, SETTINGS_FILE, logger
 from UI.ViewUtils import COLORS, is_system_tag, ToastNotification
 from UI.DetailPanel.Elements import update_fav_btn
 
@@ -26,7 +26,6 @@ class LibraryManager:
         self.app.library_data = self.app.client.load_library() or []
         
         # Populate AutoComplete sets in Controller
-        # (We access these via self.app.logic.sticker_tags_ac etc, assuming Controller is initialized)
         if hasattr(self.app, 'logic'):
             self.app.logic.sticker_tags_ac.add("NSFW") 
             
@@ -348,21 +347,70 @@ class LibraryManager:
         sel_col = self.app.logic.selected_collection_data
         if not sel_col: return
         
+        # Collection covers are actually stored as system covers now to persist across sessions better,
+        # but we also update the pack metadata for backward compatibility/redundancy.
+        
+        # 1. Update Pack Metadata
         val = path_str if path_str else ""
         for p in sel_col['packs']:
             p['custom_collection_cover'] = val
-            
-        self._save()
+        self._save() # Save library.json
+        
+        # 2. Update System Config (New Standard)
+        col_id = f"collection_{sel_col['name']}"
+        self.set_system_cover(col_id, val) # Save settings.json
+
+        # 3. Update Runtime Object
         sel_col['thumbnail_path'] = val
+        
+        # 4. Refresh UI
         self.app.details_manager.show_collection_details(sel_col)
-        self.app.logic.apply_filters()
+        self.app.refresh_view()
+
+    def set_system_cover(self, key: str, path_str: Optional[str]):
+        """
+        Saves a custom cover to settings.json for 'Virtual' cards like All Stickers.
+        """
+        settings = load_json(SETTINGS_FILE)
+        if "custom_covers" not in settings:
+            settings["custom_covers"] = {}
+            
+        if path_str:
+            settings["custom_covers"][key] = path_str
+        else:
+            # If resetting, remove the key so it falls back to random
+            if key in settings["custom_covers"]:
+                del settings["custom_covers"][key]
+                
+        save_json(settings, SETTINGS_FILE)
+        
+        # Force refresh of current view to reflect change
         self.app.refresh_view()
 
     def open_collection_cover_selector(self):
-        self.app.popup_manager.open_cover_selector_modal(is_collection=True)
+        # Delegate to popup manager, passing the callback
+        self.app.popup_manager.open_cover_selector_modal(
+            "Collection Cover", 
+            lambda path: self.set_collection_cover(path)
+        )
 
     def open_cover_selector(self):
-        self.app.popup_manager.open_cover_selector_modal(is_collection=False)
+        # Pack covers logic remains the same (stored in library.json)
+        # We pass a callback wrapper that updates the current pack
+        def update_pack_cover(path):
+            if not self.app.logic.current_pack_data: return
+            if path is None:
+                self.app.logic.current_pack_data['thumbnail_path'] = "" 
+                if 'temp_thumbnail' in self.app.logic.current_pack_data:
+                    del self.app.logic.current_pack_data['temp_thumbnail']
+            else:
+                self.app.logic.current_pack_data['thumbnail_path'] = path
+            
+            self._save()
+            self.app.details_manager.show_pack_details(self.app.logic.current_pack_data)
+            self.app.refresh_view()
+
+        self.app.popup_manager.open_cover_selector_modal("Pack Cover", update_pack_cover)
 
     # ==========================================================================
     #   DELETION

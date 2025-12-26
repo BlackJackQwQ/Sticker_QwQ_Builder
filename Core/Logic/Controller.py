@@ -1,5 +1,5 @@
 import customtkinter as ctk
-import random  # <--- Added for random selection
+import random
 from Core.Config import SETTINGS_FILE, save_json, load_json
 from UI.ViewUtils import apply_theme_palette
 
@@ -42,6 +42,9 @@ class AppLogic:
         # Selection state for collection views
         self.selected_collection_data = None
 
+        # Custom Covers (Memory Cache)
+        self.custom_covers = {}
+
         # Autocomplete sets (Populated by LibraryManager)
         self.pack_tags_ac = set()
         self.sticker_tags_ac = set()
@@ -69,6 +72,9 @@ class AppLogic:
         
         self.nsfw_enabled = data.get("nsfw_enabled", False)
         
+        # Load Custom Covers into memory
+        self.custom_covers = data.get("custom_covers", {})
+        
         # Pass relevant settings to sub-managers
         self.filters.sort_by = data.get("sort_by", "Recently Added")
 
@@ -79,7 +85,9 @@ class AppLogic:
             "theme_name": self.current_theme_name,
             "nsfw_enabled": self.nsfw_enabled,
             # Preserve any unknown data that might be in the file
-            "custom_theme_data": load_json(SETTINGS_FILE).get("custom_theme_data", {})
+            "custom_theme_data": load_json(SETTINGS_FILE).get("custom_theme_data", {}),
+            # Save memory cache back to file
+            "custom_covers": self.custom_covers
         }
         save_json(data, SETTINGS_FILE)
 
@@ -111,7 +119,7 @@ class AppLogic:
     def add_packs_to_collection_by_tname(self, names): return self.lib.add_packs_to_collection_by_tname(names)
     def remove_pack_from_collection(self, tname): return self.lib.remove_pack_from_collection(tname)
     def disband_collection(self): return self.lib.disband_collection()
-    def get_linked_pack_collection(self, root): return self.filters.get_linked_pack_collection(root) # Note: Read-op often in Filters/Library
+    def get_linked_pack_collection(self, root): return self.filters.get_linked_pack_collection(root) 
 
     # Tags
     def add_tag_manual(self, context, tag): return self.lib.add_tag_manual(context, tag)
@@ -121,6 +129,16 @@ class AppLogic:
     def set_collection_cover(self, path): return self.lib.set_collection_cover(path)
     def open_collection_cover_selector(self): return self.lib.open_collection_cover_selector()
     def open_cover_selector(self): return self.lib.open_cover_selector() # For packs
+    
+    # System Covers (All Stickers/Collections)
+    def set_system_cover(self, key, path): 
+        # Update memory cache instantly
+        if path:
+            self.custom_covers[key] = path
+        elif key in self.custom_covers:
+            del self.custom_covers[key]
+            
+        return self.lib.set_system_cover(key, path)
 
     # Deletion
     def confirm_remove_pack(self): return self.lib.confirm_remove_pack()
@@ -255,7 +273,6 @@ class AppLogic:
     def select_startup_item(self):
         """
         Auto-selects a random pack on startup to populate the sidebar.
-        Fixes the empty/collapsed sidebar glitch.
         """
         if not self.app.library_data:
             return
@@ -265,5 +282,4 @@ class AppLogic:
         self.current_pack_data = pack
         
         # Update UI via DetailsManager
-        # We use 'after' to ensure UI is fully ready if called during init chain
         self.app.after(100, lambda: self.app.details_manager.show_pack_details(pack))

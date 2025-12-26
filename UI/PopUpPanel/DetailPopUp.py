@@ -1,13 +1,14 @@
 import customtkinter as ctk
-from typing import Optional
+from typing import Optional, Callable, Any
 from pathlib import Path
+import random
 
 from UI.PopUpPanel.Base import BasePopUp
 from UI.ViewUtils import COLORS, load_ctk_image
 from Core.Config import BASE_DIR, LIBRARY_FOLDER
 from Resources.Icons import (
     FONT_HEADER, FONT_TITLE, FONT_NORMAL, FONT_SMALL,
-    ICON_ADD, ICON_REMOVE, ICON_RANDOM, ICON_FOLDER, ICON_SEARCH
+    ICON_ADD, ICON_REMOVE, ICON_RANDOM, ICON_FOLDER, ICON_SEARCH, ICON_LEFT
 )
 
 class DetailPopUp(BasePopUp):
@@ -16,111 +17,234 @@ class DetailPopUp(BasePopUp):
     """
     def __init__(self, app):
         super().__init__(app)
+        # State for the cover selector navigation
+        self.cover_selector_win: Optional[ctk.CTkToplevel] = None
+        self.current_view_mode = "packs" # "packs" or "stickers"
+        self.current_pack_context = None
 
     # ==========================================================================
-    #   COVER SELECTOR
+    #   COVER SELECTOR (MINI LIBRARY)
     # ==========================================================================
 
-    def open_cover_selector_modal(self, is_collection=False):
+    def open_cover_selector_modal(self, target_name: str, on_select_callback: Callable[[Optional[str]], None]):
         """
-        Refined Cover Selector with Tabs: Gallery & Options.
+        Opens a Mini-Library browser to select a cover image.
+        
+        Args:
+            target_name: Title to display (e.g., "Pack Cover", "All Stickers Cover")
+            on_select_callback: Function to call with the selected file path (or None for random).
         """
-        target_name = ""
-        if is_collection:
-            if not self.app.logic.selected_collection_data: return
-            target_name = "Collection Cover"
-            packs_to_scan = self.app.logic.selected_collection_data['packs']
-        else:
-            if not self.app.logic.current_pack_data: return
-            packs_to_scan = [self.app.logic.current_pack_data]
-            target_name = "Pack Cover"
+        if self.cover_selector_win and self.cover_selector_win.winfo_exists():
+            self.cover_selector_win.focus()
+            return
+
+        self.cover_selector_win = self._create_base_window(f"Select {target_name}", 700, 650)
+        self.current_view_mode = "packs"
+        self.current_pack_context = None
+        
+        # --- HEADER CONTROLS ---
+        header = ctk.CTkFrame(self.cover_selector_win, fg_color="transparent")
+        header.pack(fill="x", padx=15, pady=10)
+        
+        # Back Button (Hidden initially)
+        self.back_btn = ctk.CTkButton(
+            header, text=f"{ICON_LEFT} Back", width=80, height=30,
+            fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"],
+            command=self._go_back_to_packs
+        )
+        # We pack it, but might hide it in _render_pack_list
+        self.back_btn.pack(side="left", padx=(0, 10))
+        
+        # Search Bar
+        self.search_var = ctk.StringVar()
+        self.search_entry = ctk.CTkEntry(
+            header, textvariable=self.search_var, placeholder_text=f"{ICON_SEARCH} Search...", 
+            height=35, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"]
+        )
+        self.search_entry.pack(side="left", fill="x", expand=True)
+        self.search_entry.bind("<KeyRelease>", lambda e: self._on_search())
+
+        # Options Menu
+        def show_options():
+            self._show_cover_options_menu(on_select_callback)
+
+        opt_btn = ctk.CTkButton(
+            header, text="Options", width=80, height=30,
+            fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"],
+            command=show_options
+        )
+        opt_btn.pack(side="right", padx=(10, 0))
+
+        # --- CONTENT AREA ---
+        self.scroll_frame = ctk.CTkScrollableFrame(self.cover_selector_win, fg_color="transparent")
+        self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        
+        # Initial Render
+        self._render_pack_list(on_select_callback)
+
+    def _show_cover_options_menu(self, callback):
+        """Shows a small popup for 'Reset to Random' or 'Remove Cover'."""
+        menu = ctk.CTkToplevel(self.cover_selector_win)
+        menu.title("Options")
+        menu.geometry("300x180")
+        menu.transient(self.cover_selector_win)
+        menu.configure(fg_color=COLORS["card_bg"])
+        
+        # Center over parent
+        try:
+            x = self.cover_selector_win.winfo_x() + (self.cover_selector_win.winfo_width() // 2) - 150
+            y = self.cover_selector_win.winfo_y() + (self.cover_selector_win.winfo_height() // 2) - 90
+            menu.geometry(f"+{x}+{y}")
+        except: pass
+        
+        ctk.CTkLabel(menu, text="Cover Options", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=15)
+        
+        ctk.CTkButton(
+            menu, text=f"{ICON_RANDOM} Reset to Random", 
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color=COLORS["text_on_accent"],
+            command=lambda: [callback(None), menu.destroy(), self.cover_selector_win.destroy()]
+        ).pack(fill="x", padx=20, pady=5)
+        
+        ctk.CTkButton(
+            menu, text=f"{ICON_REMOVE} Remove Cover", 
+            fg_color=COLORS["btn_neutral"], hover_color=COLORS["card_border"], text_color=COLORS["text_main"],
+            command=lambda: [callback(""), menu.destroy(), self.cover_selector_win.destroy()]
+        ).pack(fill="x", padx=20, pady=5)
+
+    def _on_search(self):
+        query = self.search_var.get().lower()
+        if not hasattr(self, '_active_callback'): return
+        
+        if self.current_view_mode == "packs":
+            self._render_pack_list(self._active_callback, query)
+        elif self.current_view_mode == "stickers":
+            self._render_sticker_grid(self.current_pack_context, self._active_callback, query)
+
+    def _go_back_to_packs(self):
+        self.search_entry.delete(0, "end")
+        self._render_pack_list(self._active_callback)
+
+    def _render_pack_list(self, callback, query=""):
+        self.current_view_mode = "packs"
+        self._active_callback = callback # Store for search events
+        self.back_btn.pack_forget() # Hide Back button
+        
+        # Clear
+        for w in self.scroll_frame.winfo_children(): w.destroy()
+        
+        # Grid setup
+        grid = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
+        grid.pack(fill="both", expand=True)
+        cols = 4
+        for i in range(cols): grid.grid_columnconfigure(i, weight=1)
+        
+        # Filter Packs
+        packs = [p for p in self.app.library_data if query in p['name'].lower()]
+        
+        if not packs:
+            ctk.CTkLabel(self.scroll_frame, text="No packs found.", text_color=COLORS["text_sub"]).pack(pady=50)
+            return
+
+        for i, pack in enumerate(packs):
+            if i > 50: break # Limit rendering
             
-        win = self._create_base_window(f"Select {target_name}", 650, 650)
-        
-        # TABVIEW Structure
-        tabs = ctk.CTkTabview(win, fg_color="transparent")
-        tabs.pack(fill="both", expand=True, padx=10, pady=5)
-        
-        tab_gallery = tabs.add("Gallery")
-        tab_opts = tabs.add("Options")
-        
-        # --- TAB 1: GALLERY ---
-        ctk.CTkLabel(tab_gallery, text="Click an image to set it as cover", font=FONT_NORMAL, text_color=COLORS["text_sub"]).pack(pady=(5, 10))
-        
-        scroll = ctk.CTkScrollableFrame(tab_gallery, fg_color=COLORS["transparent"])
-        scroll.pack(fill="both", expand=True)
-        
-        def set_cover(p_str: Optional[str]):
-            if is_collection:
-                self.app.logic.set_collection_cover(p_str)
-            else:
-                if p_str is None:
-                    # Reset logic
-                    self.app.logic.current_pack_data['thumbnail_path'] = "" 
-                    if 'temp_thumbnail' in self.app.logic.current_pack_data:
-                        del self.app.logic.current_pack_data['temp_thumbnail']
-                else:
-                    self.app.logic.current_pack_data['thumbnail_path'] = p_str
+            # Mini Card
+            card = ctk.CTkFrame(grid, fg_color=COLORS["card_bg"], corner_radius=8, border_width=1, border_color=COLORS["card_border"])
+            card.grid(row=i//cols, column=i%cols, padx=5, pady=5, sticky="nsew")
+            
+            # Thumbnail Logic
+            thumb_path = pack.get('thumbnail_path')
+            if not thumb_path:
+                # Try find one
+                tname = pack['t_name']
+                base = BASE_DIR / LIBRARY_FOLDER / tname
+                if base.exists():
+                    for ext in ['.png', '.webp']:
+                        attempt = base / f"sticker_0{ext}"
+                        if attempt.exists(): 
+                            thumb_path = str(attempt)
+                            break
+            
+            # Image
+            img_lbl = ctk.CTkLabel(card, text=ICON_FOLDER, font=("Arial", 32), text_color=COLORS["text_sub"])
+            img_lbl.pack(pady=(10, 5), padx=10, expand=True)
+            
+            if thumb_path:
+                try:
+                    img = load_ctk_image(thumb_path, (64, 64))
+                    if img: img_lbl.configure(image=img, text="")
+                except: pass
+            
+            # Title
+            title = pack['name']
+            if len(title) > 15: title = title[:12] + "..."
+            ctk.CTkLabel(card, text=title, font=FONT_SMALL, text_color=COLORS["text_main"]).pack(pady=(0, 5))
+            
+            # Interaction
+            cmd = lambda p=pack: self._render_sticker_grid(p, callback)
+            
+            card.bind("<Button-1>", lambda e, c=cmd: c())
+            img_lbl.bind("<Button-1>", lambda e, c=cmd: c())
+            for child in card.winfo_children():
+                child.bind("<Button-1>", lambda e, c=cmd: c())
                 
-                self.app.client.save_library(self.app.library_data)
-                self.app.details_manager.show_pack_details(self.app.logic.current_pack_data)
-                self.app.refresh_view()
-                
-            if win.winfo_exists(): win.destroy()
+            card.bind("<Enter>", lambda e, c=card: c.configure(border_color=COLORS["accent"], fg_color=COLORS["card_hover"]))
+            card.bind("<Leave>", lambda e, c=card: c.configure(border_color=COLORS["card_border"], fg_color=COLORS["card_bg"]))
 
-        # Grid Builder for Gallery
-        grid = ctk.CTkFrame(scroll, fg_color=COLORS["transparent"])
+    def _render_sticker_grid(self, pack_data, callback, query=""):
+        self.current_view_mode = "stickers"
+        self.current_pack_context = pack_data
+        self.back_btn.pack(side="left", padx=(0, 10)) # Show Back button
+        
+        # Clear
+        for w in self.scroll_frame.winfo_children(): w.destroy()
+        
+        ctk.CTkLabel(self.scroll_frame, text=f"Stickers in: {pack_data['name']}", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(0, 10))
+        
+        grid = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
         grid.pack(fill="both")
-        for i in range(5): grid.grid_columnconfigure(i, weight=1)
+        cols = 5
+        for i in range(cols): grid.grid_columnconfigure(i, weight=1)
         
-        # Populate images
-        image_list = []
-        MAX_IMAGES = 150 
+        base_path = BASE_DIR / LIBRARY_FOLDER / pack_data['t_name']
+        sticker_files = []
         
-        for p in packs_to_scan:
-            tname = p['t_name']
-            pack_path = BASE_DIR / LIBRARY_FOLDER / tname
-            if pack_path.exists():
-                imgs = [str(pack_path / f.name) for f in pack_path.iterdir() if f.suffix.lower() in {'.png','.gif','.webp'}]
-                image_list.extend(imgs[:30]) 
-                if len(image_list) > MAX_IMAGES: break 
+        # Scan folder for valid images
+        if base_path.exists():
+            all_files = sorted(list(base_path.iterdir()), key=lambda x: x.name)
+            for f in all_files:
+                if f.suffix.lower() in {'.png', '.webp', '.gif'}:
+                    if query and query not in f.name.lower(): continue
+                    sticker_files.append(str(f))
         
-        if not image_list:
-            ctk.CTkLabel(scroll, text="No images found.", text_color=COLORS["text_sub"]).pack(pady=50)
-        
-        for i, path_str in enumerate(image_list):
-            card = ctk.CTkFrame(grid, fg_color=COLORS["card_bg"], corner_radius=8)
-            card.grid(row=i//5, column=i%5, padx=4, pady=4)
-            
-            preview = load_ctk_image(path_str, size=(80, 80))
-            
-            btn = ctk.CTkButton(
-                card, text="", image=preview, width=90, height=90, 
-                fg_color=COLORS["transparent"], hover_color=COLORS["card_hover"], 
-                command=lambda p=path_str: set_cover(p)
-            )
-            btn.pack(padx=2, pady=2)
+        if not sticker_files:
+            ctk.CTkLabel(self.scroll_frame, text="No images found.", text_color=COLORS["text_sub"]).pack(pady=50)
+            return
 
-        # --- TAB 2: OPTIONS ---
-        opt_frame = ctk.CTkFrame(tab_opts, fg_color=COLORS["transparent"])
-        opt_frame.pack(fill="both", expand=True, padx=20, pady=20)
-        
-        ctk.CTkLabel(opt_frame, text="Cover Settings", font=FONT_HEADER, text_color=COLORS["text_main"]).pack(pady=(0, 20))
-        
-        ctk.CTkButton(
-            opt_frame, text=f"{ICON_RANDOM} Reset to Random Image", height=40, font=FONT_NORMAL,
-            fg_color=COLORS["accent"], text_color=COLORS["text_on_accent"], hover_color=COLORS["accent_hover"],
-            command=lambda: set_cover(None)
-        ).pack(fill="x", pady=10)
-        
-        ctk.CTkButton(
-            opt_frame, text=f"{ICON_REMOVE} Remove Cover (Use Default Icon)", height=40, font=FONT_NORMAL,
-            fg_color=COLORS["btn_neutral"], text_color=COLORS["text_on_neutral"], hover_color=COLORS["card_hover"],
-            command=lambda: set_cover("") 
-        ).pack(fill="x", pady=10)
-        
-        ctk.CTkLabel(opt_frame, text="Note: 'Reset to Random' picks a random sticker each time the details are viewed.", 
-                     font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(pady=20)
+        for i, path in enumerate(sticker_files):
+            if i > 100: break
+            
+            frame = ctk.CTkFrame(grid, fg_color=COLORS["card_bg"], corner_radius=6)
+            frame.grid(row=i//cols, column=i%cols, padx=4, pady=4)
+            
+            img_lbl = ctk.CTkLabel(frame, text="", width=80, height=80)
+            img_lbl.pack(padx=2, pady=2)
+            
+            # Load
+            img = load_ctk_image(path, (80, 80))
+            if img: img_lbl.configure(image=img)
+            
+            # Select Action
+            def on_click(p=path):
+                callback(p)
+                if self.cover_selector_win.winfo_exists():
+                    self.cover_selector_win.destroy()
+            
+            img_lbl.bind("<Button-1>", lambda e, c=on_click: c())
+            frame.bind("<Button-1>", lambda e, c=on_click: c())
+            frame.bind("<Enter>", lambda e, f=frame: f.configure(fg_color=COLORS["accent"]))
+            frame.bind("<Leave>", lambda e, f=frame: f.configure(fg_color=COLORS["card_bg"]))
+
 
     # ==========================================================================
     #   COLLECTION MANAGEMENT

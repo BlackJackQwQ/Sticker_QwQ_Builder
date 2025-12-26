@@ -2,9 +2,9 @@ import json
 import os
 import shutil
 import logging
-import threading  # <--- Added
+import threading
 from pathlib import Path
-from typing import Dict, Any, Union
+from typing import Dict, Any
 
 # ==============================================================================
 #   LOGGING CONFIGURATION
@@ -28,8 +28,6 @@ TEMP_FOLDER    = "Temp"
 # ==============================================================================
 #   THREAD SAFETY
 # ==============================================================================
-# This lock prevents multiple threads (e.g., Downloader vs UI) from writing 
-# to the JSON file at the exact same time, which causes corruption.
 data_lock = threading.Lock()
 
 # ==============================================================================
@@ -40,7 +38,12 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "theme_name": "Classic", 
     "nsfw_enabled": False,
     "show_favorites_only": False,
-    "custom_theme_data": {} 
+    "custom_theme_data": {},
+    # Added for Phase 5: Storage for "All Stickers" and "Collection" covers
+    "custom_covers": {
+        "virtual_all_stickers": "",  # Path to cover for All Stickers
+        # "collection_Name": "path/to/img"  <-- Dynamically added
+    }
 }
 
 # ==============================================================================
@@ -62,6 +65,14 @@ def initialize_system_files():
     # 3. Create JSON files if missing
     if not os.path.exists(SETTINGS_FILE):
         save_json(DEFAULT_SETTINGS, SETTINGS_FILE)
+    else:
+        # MIGRATION: Ensure 'custom_covers' exists if loading old config
+        try:
+            current = load_json(SETTINGS_FILE)
+            if "custom_covers" not in current:
+                current["custom_covers"] = {}
+                save_json(current, SETTINGS_FILE)
+        except: pass
         
     if not os.path.exists(LIBRARY_FILE):
         save_json([], LIBRARY_FILE)
@@ -73,18 +84,13 @@ def initialize_system_files():
 def save_json(data: Any, filename: str):
     """
     Thread-safe JSON saver.
-    Blocks other threads until writing is complete.
     """
     try:
-        # Acquire lock before opening file
         with data_lock:
-            # Atomic write pattern: write to temp file first, then rename
-            # This prevents data loss if the app crashes mid-write
             temp_filename = f"{filename}.tmp"
             with open(temp_filename, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=4, ensure_ascii=False)
             
-            # Replace old file with new one
             if os.path.exists(filename):
                 os.replace(temp_filename, filename)
             else:
@@ -92,7 +98,6 @@ def save_json(data: Any, filename: str):
                 
     except Exception as e:
         logger.error(f"CRITICAL: Error saving {filename}: {e}")
-        # Try to clean up temp file if it exists
         if os.path.exists(f"{filename}.tmp"):
             try: os.remove(f"{filename}.tmp")
             except: pass
@@ -100,9 +105,6 @@ def save_json(data: Any, filename: str):
 def load_json(filename: str) -> Any:
     if not os.path.exists(filename): return {}
     try:
-        # Readers usually don't need a lock unless you require strict consistency,
-        # but since we use atomic replacement (os.replace) in save_json, 
-        # reading is generally safe without blocking.
         with open(filename, 'r', encoding='utf-8') as f:
             return json.load(f)
     except Exception as e:

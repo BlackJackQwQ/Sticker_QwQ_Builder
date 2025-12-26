@@ -62,7 +62,8 @@ class StickerBotApp(ctk.CTk):
         # --- VIEW STATE ---
         self.view_mode = "library" 
         self.view_stack = []
-        self.current_layout_mode = "Large"
+        # UPDATED: Set default layout mode to 'Normal'
+        self.current_layout_mode = "Normal"
         
         self.left_sidebar_visible = True
         self.right_sidebar_visible = True
@@ -111,7 +112,8 @@ class StickerBotApp(ctk.CTk):
             self.after(500, lambda: self.popup_manager.open_settings_modal())
             
         # Initial layout render
-        self.change_layout_mode("Large")
+        # UPDATED: Use 'Normal' as the startup layout
+        self.change_layout_mode("Normal")
         self.refresh_view()
         
         # FIX: Auto-select a random pack to populate the sidebar
@@ -206,8 +208,9 @@ class StickerBotApp(ctk.CTk):
         self.page_next_btn = ctk.CTkButton(view_ctrl_group, text=">", width=30, height=35, fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"], command=lambda: self.logic.change_page("next"))
         self.page_next_btn.pack(side="left", padx=(2, 15))
 
-        self.view_options = ctk.CTkSegmentedButton(view_ctrl_group, values=["Large", "Small", "List"], command=self.change_layout_mode, height=35, corner_radius=10, selected_color=COLORS["seg_selected"], selected_hover_color=COLORS["seg_selected"], unselected_color=COLORS["seg_fg"], unselected_hover_color=COLORS["card_hover"], text_color=COLORS["seg_text"])
-        self.view_options.set("Large")
+        # UPDATED: Added 'Normal' to view options and set it as default
+        self.view_options = ctk.CTkSegmentedButton(view_ctrl_group, values=["Large", "Normal", "Small", "List"], command=self.change_layout_mode, height=35, corner_radius=10, selected_color=COLORS["seg_selected"], selected_hover_color=COLORS["seg_selected"], unselected_color=COLORS["seg_fg"], unselected_hover_color=COLORS["card_hover"], text_color=COLORS["seg_text"])
+        self.view_options.set("Normal")
         self.view_options.pack(side="left")
 
         # --- CONTENT AREA (Canvas) ---
@@ -456,7 +459,13 @@ class StickerBotApp(ctk.CTk):
             new_cols = 1
         else:
             # Enforce minimums to prevent "weird" squeezed sizes
-            min_card_width = 280 if self.current_layout_mode == "Large" else 160
+            if self.current_layout_mode == "Large":
+                min_card_width = 280 
+            elif self.current_layout_mode == "Normal":
+                min_card_width = 200 # UPDATED: Logic for ~6 cards per row
+            else: # Small
+                min_card_width = 160
+                
             new_cols = max(1, (event.width - 20) // min_card_width)
         
         # Update Grid Configuration
@@ -487,7 +496,13 @@ class StickerBotApp(ctk.CTk):
             new_height = int(col_width * 0.75) + 85 - (CARD_PADDING * 2)
             
             # CRITICAL FIX: Enforce min heights based on mode to prevent "weird" squeezed sizes
-            min_h = 180 if self.current_layout_mode == "Large" else 140
+            if self.current_layout_mode == "Large":
+                min_h = 180
+            elif self.current_layout_mode == "Normal":
+                min_h = 160 # UPDATED: Normal mode height
+            else: # Small
+                min_h = 140
+
             if new_height < min_h: new_height = min_h
             
             # Determine image resolution to load

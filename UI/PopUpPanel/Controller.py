@@ -51,8 +51,8 @@ class PopUpManager:
     #   ROUTE TO: DetailPopUp (Right Sidebar Actions)
     # ==========================================================================
 
-    def open_cover_selector_modal(self, is_collection=False):
-        self.detail_popup.open_cover_selector_modal(is_collection)
+    def open_cover_selector_modal(self, title: str, callback: Callable):
+        self.detail_popup.open_cover_selector_modal(title, callback)
 
     def open_collection_edit_modal(self):
         self.detail_popup.open_collection_edit_modal()
