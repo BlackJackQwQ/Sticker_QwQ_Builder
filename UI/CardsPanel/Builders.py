@@ -25,15 +25,31 @@ def create_add_card(app, utils, index: int, is_sticker: bool = False):
     cmd = lambda e: app.popup_manager.open_add_pack_modal()
     
     if app.current_layout_mode == "List":
+        # List View
         icon_lbl = ctk.CTkLabel(card, text=ICON_ADD, width=48, height=48, fg_color=COLORS["card_hover"], corner_radius=8, font=("Arial", 24), text_color=COLORS["accent"])
         icon_lbl.grid(row=0, column=0, padx=12, pady=10)
         ctk.CTkLabel(card, text="Add New Pack", font=FONT_TITLE, text_color=COLORS["text_main"]).grid(row=0, column=1, sticky="w", padx=5)
     else:
-        center_box = ctk.CTkFrame(card, fg_color=COLORS["transparent"])
-        center_box.grid(row=0, column=0, rowspan=2, sticky="nsew") 
-        fs = 48 if app.current_layout_mode == "Large" else 32
-        ctk.CTkLabel(center_box, text=ICON_ADD, font=("Arial", fs), text_color=COLORS["text_sub"]).pack(expand=True)
-        ctk.CTkLabel(center_box, text="Add Pack", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(0, 20))
+        # Grid View - Standardized Layout
+        img_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], corner_radius=10)
+        img_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 2))
+        
+        fs = 64 if app.current_layout_mode == "Large" else 48
+        ctk.CTkLabel(img_frame, text=ICON_ADD, font=("Arial", fs), text_color=COLORS["text_sub"]).place(relx=0.5, rely=0.5, anchor="center")
+        
+        # Bottom Frame (Info Area)
+        info_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=55)
+        info_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 5))
+        
+        info_frame.grid_columnconfigure(0, weight=1)
+        info_frame.grid_rowconfigure(0, weight=1)
+        
+        name_font = FONT_TITLE if app.current_layout_mode == "Large" else FONT_NORMAL
+        ctk.CTkLabel(info_frame, text="Add Pack", font=name_font, text_color=COLORS["text_main"], anchor="w").grid(row=0, column=0, sticky="ew")
+        
+        sub_row = ctk.CTkFrame(info_frame, fg_color=COLORS["transparent"])
+        sub_row.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ctk.CTkLabel(sub_row, text="Create New", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(side="left")
 
     utils.bind_hover_effects(card, cmd)
     app.cards.append(card)
@@ -43,23 +59,77 @@ def create_all_stickers_card(app, utils, index: int):
     total_stickers = sum(p.get('count', 0) for p in app.library_data)
     cmd = lambda e: app.show_gallery(None)
 
+    # --- Random Thumbnail Selection for All Stickers ---
+    thumb_path = None
+    try:
+        # Pick random packs to try finding a sticker from
+        candidate_packs = random.sample(app.library_data, min(len(app.library_data), 5)) if app.library_data else []
+        for pack in candidate_packs:
+            count = pack.get('count', 0)
+            if count > 0:
+                ridx = random.randint(0, count - 1)
+                tname = pack['t_name']
+                base = BASE_DIR / LIBRARY_FOLDER / tname
+                for ext in ['.png', '.gif', '.webp', '.webm', '.mp4']:
+                    p = base / f"sticker_{ridx}{ext}"
+                    if p.exists():
+                        thumb_path = str(p)
+                        break
+            if thumb_path: break
+    except: pass
+
+    # Prepare Image Logic
+    if app.current_layout_mode == "Large": target_size = SIZE_LARGE
+    elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
+    else: target_size = SIZE_LIST
+    
+    is_anim = utils.is_file_animated(thumb_path)
+    card.is_animated_content = is_anim
+    card.image_path = thumb_path
+    card.placeholder_text = ICON_LIBRARY
+
     if app.current_layout_mode == "List":
-        icon_lbl = ctk.CTkLabel(card, text=ICON_LIBRARY, width=48, height=48, fg_color=COLORS["card_hover"], corner_radius=8, font=("Arial", 20))
-        icon_lbl.grid(row=0, column=0, padx=12, pady=10)
+        # List View
+        img_bg = ctk.CTkLabel(card, text=ICON_LIBRARY, width=48, height=48, fg_color=COLORS["transparent"], corner_radius=6, font=("Arial", 20), text_color=COLORS["accent"])
+        img_bg.grid(row=0, column=0, padx=12, pady=10)
+        card.image_label = img_bg
+        
+        if thumb_path: utils.load_image_to_label(img_bg, thumb_path, target_size, ICON_LIBRARY)
+
         info_box = ctk.CTkFrame(card, fg_color="transparent")
         info_box.grid(row=0, column=1, sticky="w", padx=5)
         ctk.CTkLabel(info_box, text="All Stickers Library", font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(anchor="w")
         ctk.CTkLabel(info_box, text=f"{total_stickers} Total Items", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(anchor="w")
     else:
-        img_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"])
-        img_frame.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
-        fs = 32 if app.current_layout_mode == "Large" else 24
-        ctk.CTkLabel(img_frame, text=ICON_LIBRARY, font=("Arial", fs), text_color=COLORS["text_sub"]).place(relx=0.5, rely=0.5, anchor="center")
+        # Grid View
+        img_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], corner_radius=10)
+        img_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 2))
         
-        info_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=40)
-        info_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        ctk.CTkLabel(info_frame, text="All Stickers", font=FONT_NORMAL, text_color=COLORS["text_main"], anchor="w").pack(fill="x")
-        ctk.CTkLabel(info_frame, text=f"{total_stickers} Items", font=FONT_CAPTION, text_color=COLORS["text_sub"], anchor="w").pack(fill="x")
+        img_lbl = ctk.CTkLabel(img_frame, text="", fg_color="transparent")
+        img_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        card.image_label = img_lbl
+        
+        if thumb_path:
+            if is_anim:
+                utils.animate_card(card, thumb_path, target_size, img_lbl)
+            else:
+                utils.load_image_to_label(img_lbl, thumb_path, target_size, ICON_LIBRARY)
+        else:
+            fs = 48 if app.current_layout_mode == "Large" else 32
+            img_lbl.configure(text=ICON_LIBRARY, font=("Arial", fs), text_color=COLORS["text_sub"])
+        
+        info_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=55)
+        info_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 5))
+        
+        info_frame.grid_columnconfigure(0, weight=1)
+        info_frame.grid_rowconfigure(0, weight=1)
+        
+        name_font = FONT_TITLE if app.current_layout_mode == "Large" else FONT_NORMAL
+        ctk.CTkLabel(info_frame, text="All Stickers", font=name_font, text_color=COLORS["text_main"], anchor="w").grid(row=0, column=0, sticky="ew")
+        
+        sub_row = ctk.CTkFrame(info_frame, fg_color="transparent")
+        sub_row.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ctk.CTkLabel(sub_row, text=f"{total_stickers} Items", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(side="left")
 
     utils.bind_hover_effects(card, cmd)
     app.cards.append(card)
@@ -69,12 +139,46 @@ def create_all_stickers_in_collection_card(app, utils, index: int):
     cmd = lambda e: app.show_gallery(None)
     
     count = 0
+    packs = []
     if app.logic.current_collection_data:
         count = app.logic.current_collection_data.get('count', 0)
+        packs = app.logic.current_collection_data.get('packs', [])
+
+    # --- Random Thumbnail Selection for Collection ---
+    thumb_path = None
+    try:
+        candidate_packs = random.sample(packs, min(len(packs), 5)) if packs else []
+        for pack in candidate_packs:
+            p_count = pack.get('count', 0)
+            if p_count > 0:
+                ridx = random.randint(0, p_count - 1)
+                tname = pack['t_name']
+                base = BASE_DIR / LIBRARY_FOLDER / tname
+                for ext in ['.png', '.gif', '.webp', '.webm', '.mp4']:
+                    p = base / f"sticker_{ridx}{ext}"
+                    if p.exists():
+                        thumb_path = str(p)
+                        break
+            if thumb_path: break
+    except: pass
+
+    # Prepare Image Logic
+    if app.current_layout_mode == "Large": target_size = SIZE_LARGE
+    elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
+    else: target_size = SIZE_LIST
+    
+    is_anim = utils.is_file_animated(thumb_path)
+    card.is_animated_content = is_anim
+    card.image_path = thumb_path
+    card.placeholder_text = ICON_LIBRARY
 
     if app.current_layout_mode == "List":
-        icon_lbl = ctk.CTkLabel(card, text=ICON_LIBRARY, width=48, height=48, fg_color=COLORS["card_hover"], corner_radius=8, font=("Arial", 20))
-        icon_lbl.grid(row=0, column=0, padx=12, pady=10)
+        # List View
+        img_bg = ctk.CTkLabel(card, text=ICON_LIBRARY, width=48, height=48, fg_color=COLORS["transparent"], corner_radius=6, font=("Arial", 20), text_color=COLORS["accent"])
+        img_bg.grid(row=0, column=0, padx=12, pady=10)
+        card.image_label = img_bg
+        
+        if thumb_path: utils.load_image_to_label(img_bg, thumb_path, target_size, ICON_LIBRARY)
         
         info_box = ctk.CTkFrame(card, fg_color="transparent")
         info_box.grid(row=0, column=1, sticky="w", padx=5)
@@ -82,15 +186,35 @@ def create_all_stickers_in_collection_card(app, utils, index: int):
         ctk.CTkLabel(info_box, text=f"{count} Total Items", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(anchor="w")
         
     else:
-        img_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"])
-        img_frame.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
-        fs = 32 if app.current_layout_mode == "Large" else 24
-        ctk.CTkLabel(img_frame, text=ICON_LIBRARY, font=("Arial", fs), text_color=COLORS["text_sub"]).place(relx=0.5, rely=0.5, anchor="center")
+        # Grid View
+        img_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], corner_radius=10)
+        img_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=(6, 2))
         
-        info_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=40)
-        info_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(0, 8))
-        ctk.CTkLabel(info_frame, text="All Collection Stickers", font=FONT_NORMAL, text_color=COLORS["text_main"], anchor="w").pack(fill="x")
-        ctk.CTkLabel(info_frame, text=f"{count} Items", font=FONT_CAPTION, text_color=COLORS["text_sub"], anchor="w").pack(fill="x")
+        img_lbl = ctk.CTkLabel(img_frame, text="", fg_color="transparent")
+        img_lbl.place(relx=0.5, rely=0.5, anchor="center")
+        card.image_label = img_lbl
+        
+        if thumb_path:
+            if is_anim:
+                utils.animate_card(card, thumb_path, target_size, img_lbl)
+            else:
+                utils.load_image_to_label(img_lbl, thumb_path, target_size, ICON_LIBRARY)
+        else:
+            fs = 48 if app.current_layout_mode == "Large" else 32
+            img_lbl.configure(text=ICON_LIBRARY, font=("Arial", fs), text_color=COLORS["text_sub"])
+        
+        info_frame = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=55)
+        info_frame.grid(row=1, column=0, sticky="ew", padx=10, pady=(2, 5))
+        
+        info_frame.grid_columnconfigure(0, weight=1)
+        info_frame.grid_rowconfigure(0, weight=1)
+        
+        name_font = FONT_TITLE if app.current_layout_mode == "Large" else FONT_NORMAL
+        ctk.CTkLabel(info_frame, text="All In Collection", font=name_font, text_color=COLORS["text_main"], anchor="w").grid(row=0, column=0, sticky="ew")
+        
+        sub_row = ctk.CTkFrame(info_frame, fg_color="transparent")
+        sub_row.grid(row=1, column=0, sticky="ew", pady=(2, 0))
+        ctk.CTkLabel(sub_row, text=f"{count} Items", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(side="left")
     
     utils.bind_hover_effects(card, cmd)
     app.cards.append(card)
@@ -146,7 +270,7 @@ def create_folder_card(app, utils, index: int, folder_data: Dict[str, Any]):
         img_frame.grid(row=0, column=0, sticky="nsew", padx=6, pady=6)
         
         if thumb:
-            img_lbl = ctk.CTkLabel(img_frame, text="", fg_color=COLORS["transparent"])
+            img_lbl = ctk.CTkLabel(img_frame, text="", fg_color="transparent")
             img_lbl.place(relx=0.5, rely=0.5, anchor="center")
             card.image_label = img_lbl
             
@@ -160,6 +284,7 @@ def create_folder_card(app, utils, index: int, folder_data: Dict[str, Any]):
         # Badge
         ctk.CTkLabel(img_frame, text="COLLECTION", font=("Arial", 10, "bold"), fg_color=COLORS["btn_primary"], text_color=COLORS["text_on_primary"], corner_radius=4).place(relx=0.05, rely=0.05)
 
+        # FIXED TYPO HERE
         info = ctk.CTkFrame(card, fg_color=COLORS["transparent"], height=55)
         info.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         

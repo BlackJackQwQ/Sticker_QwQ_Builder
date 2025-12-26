@@ -51,11 +51,13 @@ class AsyncLoader:
             self._anim_loop_id = None
             
         # 2. Immediate UI Feedback
-        # Only clear if we are actually starting a new logical load (id change)
-        # or if the path is invalid.
+        # If path is empty, we explicitly clear the image.
         if not path:
             if label_widget.winfo_exists():
-                label_widget.configure(image=None, text="(No Image)")
+                try:
+                    label_widget.configure(image=None, text="")
+                except Exception:
+                    pass 
             return
 
         # 3. Schedule the work
@@ -79,12 +81,16 @@ class AsyncLoader:
             if self._current_load_id == req_id:
                 self._play_frames(frames, duration, label_widget, req_id)
 
+        # Clear any existing image on the foreground label so the background "Loading..." shows through
+        # We use try/except to be crash-proof during rapid switching
+        try:
+            if label_widget.winfo_exists():
+                label_widget.configure(image=None, text="")
+        except Exception:
+            pass
+
         # A. Video Files (WebM, MP4) -> Heavy -> Thread
         if path.lower().endswith(('.webm', '.mp4', '.mkv')):
-            if label_widget.winfo_exists(): 
-                # FIX: Explicitly clear image=None to prevent "pyimage doesn't exist" error
-                label_widget.configure(image=None, text="Loading Video...")
-            
             self.executor.submit(
                 self._background_load_video, path, size_tuple, on_frames_ready, req_id
             )
@@ -100,14 +106,9 @@ class AsyncLoader:
                 with Image.open(path) as test:
                     if getattr(test, "is_animated", False): is_anim = True
         except Exception as e:
-            # Log warning but continue (fallback to static)
             logger.warning(f"Failed to check animation status for {path}: {e}")
 
         if is_anim:
-            if label_widget.winfo_exists(): 
-                # FIX: Explicitly clear image here too
-                label_widget.configure(image=None, text="Loading Anim...")
-            
             self.executor.submit(
                 self._background_load_gif, path, size_tuple, on_frames_ready, req_id
             )
@@ -116,10 +117,17 @@ class AsyncLoader:
         # C. Static Images -> Light -> Main Thread
         # ViewUtils.load_ctk_image handles caching internally
         img = load_ctk_image(path, size_tuple)
-        if img and label_widget.winfo_exists():
-            label_widget.configure(image=img, text="")
-        elif label_widget.winfo_exists():
-            label_widget.configure(text="⚠ Load Failed")
+        
+        # Apply static image safely
+        if label_widget.winfo_exists():
+            try:
+                if img:
+                    label_widget.configure(image=img, text="")
+                else:
+                    # If load failed, show error text (Background 'Loading...' will be covered)
+                    label_widget.configure(image=None, text="⚠ Load Failed")
+            except Exception:
+                pass
 
     # ==========================================================================
     #   WORKERS (Run in Background Threads)
@@ -208,7 +216,8 @@ class AsyncLoader:
                     lambda: animate((idx + 1) % len(frames))
                 )
             except Exception as e:
-                # Common if widget is destroyed mid-update
-                logger.debug(f"Animation loop stopped: {e}")
+                # Common if widget is destroyed mid-update during rapid clicking
+                # Just ignore the error and stop the loop
+                pass
             
         animate(0)

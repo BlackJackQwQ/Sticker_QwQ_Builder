@@ -48,16 +48,30 @@ class BaseLayout:
 
     def _setup_image_area(self, parent):
         """Builds the standard image container."""
-        self.image_frame = ctk.CTkFrame(parent, fg_color=COLORS["transparent"], corner_radius=12)
+        # UPDATE: Frame has background color
+        self.image_frame = ctk.CTkFrame(parent, fg_color=COLORS["card_bg"], corner_radius=12)
         self.image_frame.pack(fill="x", pady=(0, 10), padx=20)
-        
-        # Initial State: Placeholder Text
-        self.image_label = ctk.CTkLabel(
-            self.image_frame, text="Select Item", 
-            text_color=COLORS["text_placeholder"], 
-            fg_color=COLORS["transparent"]
+        self.image_frame.grid_rowconfigure(0, weight=1)
+        self.image_frame.grid_columnconfigure(0, weight=1)
+
+        # LAYER 1: Permanent Loading Text (Background)
+        # This sits at grid(0,0) and stays there forever.
+        self.loading_bg_label = ctk.CTkLabel(
+            self.image_frame, 
+            text="Loading...", 
+            text_color=COLORS["text_sub"],
+            fg_color="transparent"
         )
-        self.image_label.pack(expand=True, fill="both", padx=5, pady=5)
+        self.loading_bg_label.grid(row=0, column=0, sticky="nsew")
+        
+        # LAYER 2: Foreground Image Label (Initial State)
+        # This sits ON TOP at grid(0,0). When empty/transparent, layer 1 shows through.
+        self.image_label = ctk.CTkLabel(
+            self.image_frame, 
+            text="", # Start empty so "Loading..." shows
+            fg_color="transparent"
+        )
+        self.image_label.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         
         # Bind resize for responsive image loading
         self.image_frame.bind("<Configure>", self._on_image_resize)
@@ -74,15 +88,50 @@ class BaseLayout:
         )
 
     def _reset_image_label(self):
-        """Clears the image label to prevent ghosting when switching views."""
+        """
+        Destroys the old foreground label to instantly reveal 'Loading...' background,
+        then creates a new fresh one for the next image.
+        """
         if self.image_label and self.image_label.winfo_exists():
             try:
-                # FIX: Wrap in try/except to catch "image doesn't exist" TclError
-                self.image_label.configure(image=None, text="Loading...", text_color=COLORS["text_sub"])
+                self.image_label.destroy()
             except Exception:
-                # Fallback: Sometimes just setting text works if image kwarg fails
-                try: self.image_label.configure(text="Loading...")
-                except: pass
+                pass
+        
+        # Re-create the foreground label on top
+        self.image_label = ctk.CTkLabel(
+            self.image_frame, 
+            text="", 
+            fg_color="transparent"
+        )
+        self.image_label.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
+
+    def _make_smart_label(self, parent, base_font_size=22):
+        """
+        Creates a label that wraps text and auto-shrinks font if needed.
+        """
+        label = ctk.CTkLabel(parent, text="--", font=("Segoe UI", base_font_size, "bold"), text_color=COLORS["text_main"], justify="center")
+        label.pack(fill="x")
+        
+        def on_resize(event):
+            # 1. Update wrapping width to match container
+            width = event.width - 10
+            if width < 50: return
+            label.configure(wraplength=width)
+            
+            # 2. Smart Font Scaling
+            # If text is very long (e.g. > 50 chars), shrink font proactively
+            text_len = len(label.cget("text") or "")
+            new_size = base_font_size
+            
+            if text_len > 30: new_size = max(14, base_font_size - 4)
+            if text_len > 60: new_size = max(12, base_font_size - 6)
+            
+            # Apply font
+            label.configure(font=("Segoe UI", new_size, "bold"))
+            
+        parent.bind("<Configure>", on_resize)
+        return label
 
 
 class PackLayout(BaseLayout):
@@ -108,9 +157,8 @@ class PackLayout(BaseLayout):
         self.title_box = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.title_box.pack(fill="x", padx=15, pady=(0, 5))
         
-        self.title_lbl = ctk.CTkLabel(self.title_box, text="--", font=FONT_DISPLAY, text_color=COLORS["text_main"])
-        self.title_lbl.pack(fill="x")
-        self.title_box.bind("<Configure>", lambda e: adjust_text_size(e, self.title_lbl, 22))
+        # SMART TITLE LABEL (Replaces basic label)
+        self.title_lbl = self._make_smart_label(self.title_box, 22)
         
         # Rename Entry (Hidden by default)
         self.title_entry = ctk.CTkEntry(self.title_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
@@ -145,7 +193,8 @@ class PackLayout(BaseLayout):
         create_action_button(self.frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.confirm_remove_pack(), ToastNotification(self.app, "Action", "Remove Pack requested.")])
 
-        ctk.CTkFrame(self.frame, height=40, fg_color="transparent").pack()
+        # UPDATE: Padding 50
+        ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
 
     def refresh(self, data: Dict[str, Any], load_id: int):
@@ -229,9 +278,8 @@ class CollectionLayout(BaseLayout):
         self.title_box = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.title_box.pack(fill="x", padx=15, pady=(0, 5))
         
-        self.title_lbl = ctk.CTkLabel(self.title_box, text="--", font=FONT_DISPLAY, text_color=COLORS["text_main"])
-        self.title_lbl.pack(fill="x")
-        self.title_box.bind("<Configure>", lambda e: adjust_text_size(e, self.title_lbl, 22))
+        # SMART TITLE LABEL
+        self.title_lbl = self._make_smart_label(self.title_box, 22)
         
         self.title_entry = ctk.CTkEntry(self.title_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
         
@@ -254,7 +302,8 @@ class CollectionLayout(BaseLayout):
         create_action_button(self.frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.disband_collection(), ToastNotification(self.app, "Disbanded", "Collection deleted.")])
 
-        ctk.CTkFrame(self.frame, height=40, fg_color="transparent").pack()
+        # UPDATE: Padding 50
+        ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
     def refresh(self, data, load_id):
         self.current_load_id = load_id
@@ -327,9 +376,8 @@ class StickerLayout(BaseLayout):
         self.name_box = ctk.CTkFrame(self.single_view, fg_color="transparent")
         self.name_box.pack(fill="x", padx=15, pady=(0, 5))
         
-        self.name_lbl = ctk.CTkLabel(self.name_box, text="Name", font=FONT_DISPLAY, text_color=COLORS["text_main"])
-        self.name_lbl.pack(fill="x")
-        self.name_box.bind("<Configure>", lambda e: adjust_text_size(e, self.name_lbl, 22))
+        # SMART TITLE LABEL
+        self.name_lbl = self._make_smart_label(self.name_box, 22)
         
         self.name_entry = ctk.CTkEntry(self.name_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
         
@@ -345,12 +393,8 @@ class StickerLayout(BaseLayout):
         create_section_header(self.single_view, "Actions")
         
         # Size Menu
-        self.app.details_manager = type('obj', (object,), {'size_var': ctk.StringVar(value="Original")}) # Hack for Logic compatibility if needed, better to fix logic
-        # Ideally logic shouldn't read from UI, but for now we replicate the var
+        self.app.details_manager = type('obj', (object,), {'size_var': ctk.StringVar(value="Original")}) 
         self.size_var = ctk.StringVar(value="Original")
-        # In the new architecture, we should update the app.details_manager reference or pass this var to logic.
-        # For now, we inject it into the app.details_manager shim if it doesn't exist or update Logic to read from here.
-        # Let's bind it to the Logic's expectation by assigning it to the controller in __init__ of Controller.
         
         self.size_menu = ctk.CTkOptionMenu(
             self.single_view, variable=self.size_var,
@@ -361,8 +405,6 @@ class StickerLayout(BaseLayout):
         self.size_menu.pack(fill="x", padx=30, pady=(5, 10))
 
         def on_copy():
-            # Inject this layout's size_var into where logic expects it, or modify Logic.py later.
-            # We will assume Logic uses app.details_manager.size_var
             self.app.details_manager.size_var = self.size_var 
             self.app.logic.copy_sticker()
             ToastNotification(self.app, "Copied", "Image copied to clipboard.")
@@ -381,6 +423,9 @@ class StickerLayout(BaseLayout):
         
         self.batch_tags = TagSection(self.batch_view, self.app, "sticker")
 
+        # UPDATE: Padding 50
+        ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
+
     def refresh(self, load_id):
         self.current_load_id = load_id
         
@@ -392,7 +437,6 @@ class StickerLayout(BaseLayout):
             self.single_view.pack(fill="both", expand=True)
             
             if count == 0: 
-                # Edge case: No selection (should ideally hide whole panel)
                 return
 
             item = selection[0]
@@ -406,7 +450,6 @@ class StickerLayout(BaseLayout):
             self.current_img_path = path
             self._reset_image_label()
             
-            # Explicit check for missing file here too
             if path and not Path(path).exists():
                  try:
                     self.image_label.configure(image=None, text="⚠️ File Missing", text_color=COLORS["btn_negative"])

@@ -113,6 +113,9 @@ class StickerBotApp(ctk.CTk):
         # Initial layout render
         self.change_layout_mode("Large")
         self.refresh_view()
+        
+        # FIX: Auto-select a random pack to populate the sidebar
+        self.logic.select_startup_item()
 
     # ==========================================================================
     #   LAYOUT CONSTRUCTION

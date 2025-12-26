@@ -1,9 +1,9 @@
 import customtkinter as ctk
+import random  # <--- Added for random selection
 from Core.Config import SETTINGS_FILE, save_json, load_json
 from UI.ViewUtils import apply_theme_palette
 
 # --- Import New Sub-Managers ---
-# These files will be created in the next steps of the refactoring process
 from .Library import LibraryManager
 from .Filters import FilterManager
 from .Actions import ActionManager
@@ -251,3 +251,19 @@ class AppLogic:
     def show_collection_details(self, folder_data):
         self.selected_collection_data = folder_data
         self.app.details_manager.show_collection_details(folder_data)
+
+    def select_startup_item(self):
+        """
+        Auto-selects a random pack on startup to populate the sidebar.
+        Fixes the empty/collapsed sidebar glitch.
+        """
+        if not self.app.library_data:
+            return
+
+        # Pick a random pack
+        pack = random.choice(self.app.library_data)
+        self.current_pack_data = pack
+        
+        # Update UI via DetailsManager
+        # We use 'after' to ensure UI is fully ready if called during init chain
+        self.app.after(100, lambda: self.app.details_manager.show_pack_details(pack))
