@@ -52,6 +52,12 @@ class PopUpManager:
     # ==========================================================================
 
     def open_cover_selector_modal(self, title: str, callback: Callable):
+        """
+        Opens the unified Cover Selector. 
+        The DetailPopUp logic now automatically handles:
+        1. Context detection (Pack vs Collection)
+        2. Merged 'Random' and 'Remove' actions inside the popup.
+        """
         self.detail_popup.open_cover_selector_modal(title, callback)
 
     def open_collection_edit_modal(self):

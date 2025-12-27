@@ -2,9 +2,12 @@ import customtkinter as ctk
 from typing import Optional, Callable, Any
 from pathlib import Path
 import random
+import cv2  # Needed for video thumbnails
+from PIL import Image
 
 from UI.PopUpPanel.Base import BasePopUp
 from UI.ViewUtils import COLORS, load_ctk_image
+from UI.CardsPanel.Utils import CardUtils
 from Core.Config import BASE_DIR, LIBRARY_FOLDER
 from Resources.Icons import (
     FONT_HEADER, FONT_TITLE, FONT_NORMAL, FONT_SMALL,
@@ -17,45 +20,71 @@ class DetailPopUp(BasePopUp):
     """
     def __init__(self, app):
         super().__init__(app)
+        # Reuse CardUtils for consistent animation logic (Hover effects)
+        self.utils = CardUtils(app)
+        
         # State for the cover selector navigation
         self.cover_selector_win: Optional[ctk.CTkToplevel] = None
         self.current_view_mode = "packs" # "packs" or "stickers"
         self.current_pack_context = None
+        
+        # Navigation Context State
+        self.active_context_packs = []  
+        self.can_navigate_up = True     
 
     # ==========================================================================
     #   COVER SELECTOR (MINI LIBRARY)
     # ==========================================================================
 
     def open_cover_selector_modal(self, target_name: str, on_select_callback: Callable[[Optional[str]], None]):
-        """
-        Opens a Mini-Library browser to select a cover image.
-        
-        Args:
-            target_name: Title to display (e.g., "Pack Cover", "All Stickers Cover")
-            on_select_callback: Function to call with the selected file path (or None for random).
-        """
         if self.cover_selector_win and self.cover_selector_win.winfo_exists():
             self.cover_selector_win.focus()
             return
 
         self.cover_selector_win = self._create_base_window(f"Select {target_name}", 700, 650)
-        self.current_view_mode = "packs"
-        self.current_pack_context = None
         
-        # --- HEADER CONTROLS ---
+        def on_close():
+            self._stop_popup_animations()
+            self.cover_selector_win.destroy()
+        self.cover_selector_win.protocol("WM_DELETE_WINDOW", on_close)
+        
+        # --- 1. DETERMINE CONTEXT ---
+        start_in_stickers = False
+        self.can_navigate_up = True
+        self.active_context_packs = []
+
+        is_collection_intent = "collection" in target_name.lower()
+
+        if is_collection_intent and self.app.logic.selected_collection_data:
+            self.active_context_packs = self.app.logic.selected_collection_data.get('packs', [])
+            self.current_view_mode = "packs"
+            
+        elif self.app.logic.current_pack_data:
+            tname = self.app.logic.current_pack_data.get('t_name')
+            if tname == 'all_library_virtual':
+                self.active_context_packs = self.app.library_data
+                self.current_view_mode = "packs"
+            else:
+                self.active_context_packs = [self.app.logic.current_pack_data]
+                self.current_pack_context = self.app.logic.current_pack_data
+                start_in_stickers = True
+                self.can_navigate_up = False
+                self.current_view_mode = "stickers"
+        else:
+            self.active_context_packs = self.app.library_data
+
+        # --- 2. HEADER CONTROLS ---
         header = ctk.CTkFrame(self.cover_selector_win, fg_color="transparent")
         header.pack(fill="x", padx=15, pady=10)
         
-        # Back Button (Hidden initially)
         self.back_btn = ctk.CTkButton(
             header, text=f"{ICON_LEFT} Back", width=80, height=30,
             fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"],
             command=self._go_back_to_packs
         )
-        # We pack it, but might hide it in _render_pack_list
         self.back_btn.pack(side="left", padx=(0, 10))
+        self.back_btn.pack_forget() 
         
-        # Search Bar
         self.search_var = ctk.StringVar()
         self.search_entry = ctk.CTkEntry(
             header, textvariable=self.search_var, placeholder_text=f"{ICON_SEARCH} Search...", 
@@ -64,52 +93,35 @@ class DetailPopUp(BasePopUp):
         self.search_entry.pack(side="left", fill="x", expand=True)
         self.search_entry.bind("<KeyRelease>", lambda e: self._on_search())
 
-        # Options Menu
-        def show_options():
-            self._show_cover_options_menu(on_select_callback)
+        # --- 3. ACTIONS ROW ---
+        actions_row = ctk.CTkFrame(self.cover_selector_win, fg_color="transparent")
+        actions_row.pack(fill="x", padx=15, pady=(0, 10))
 
-        opt_btn = ctk.CTkButton(
-            header, text="Options", width=80, height=30,
-            fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"],
-            command=show_options
-        )
-        opt_btn.pack(side="right", padx=(10, 0))
+        ctk.CTkButton(
+            actions_row, text=f"{ICON_RANDOM} Random Cover", 
+            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color=COLORS["text_on_accent"],
+            height=30,
+            command=lambda: [on_select_callback(None), on_close()]
+        ).pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ctk.CTkButton(
+            actions_row, text=f"{ICON_REMOVE} Remove Cover", 
+            fg_color=COLORS["btn_neutral"], hover_color=COLORS["card_border"], text_color=COLORS["text_main"],
+            height=30,
+            command=lambda: [on_select_callback(""), on_close()]
+        ).pack(side="left", fill="x", expand=True, padx=(5, 0))
 
-        # --- CONTENT AREA ---
+        # --- 4. CONTENT AREA ---
         self.scroll_frame = ctk.CTkScrollableFrame(self.cover_selector_win, fg_color="transparent")
         self.scroll_frame.pack(fill="both", expand=True, padx=10, pady=5)
         
-        # Initial Render
-        self._render_pack_list(on_select_callback)
-
-    def _show_cover_options_menu(self, callback):
-        """Shows a small popup for 'Reset to Random' or 'Remove Cover'."""
-        menu = ctk.CTkToplevel(self.cover_selector_win)
-        menu.title("Options")
-        menu.geometry("300x180")
-        menu.transient(self.cover_selector_win)
-        menu.configure(fg_color=COLORS["card_bg"])
+        # --- 5. INITIAL RENDER ---
+        self._active_callback = on_select_callback
         
-        # Center over parent
-        try:
-            x = self.cover_selector_win.winfo_x() + (self.cover_selector_win.winfo_width() // 2) - 150
-            y = self.cover_selector_win.winfo_y() + (self.cover_selector_win.winfo_height() // 2) - 90
-            menu.geometry(f"+{x}+{y}")
-        except: pass
-        
-        ctk.CTkLabel(menu, text="Cover Options", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=15)
-        
-        ctk.CTkButton(
-            menu, text=f"{ICON_RANDOM} Reset to Random", 
-            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color=COLORS["text_on_accent"],
-            command=lambda: [callback(None), menu.destroy(), self.cover_selector_win.destroy()]
-        ).pack(fill="x", padx=20, pady=5)
-        
-        ctk.CTkButton(
-            menu, text=f"{ICON_REMOVE} Remove Cover", 
-            fg_color=COLORS["btn_neutral"], hover_color=COLORS["card_border"], text_color=COLORS["text_main"],
-            command=lambda: [callback(""), menu.destroy(), self.cover_selector_win.destroy()]
-        ).pack(fill="x", padx=20, pady=5)
+        if start_in_stickers:
+            self._render_sticker_grid(self.current_pack_context, on_select_callback)
+        else:
+            self._render_pack_list(on_select_callback)
 
     def _on_search(self):
         query = self.search_var.get().lower()
@@ -121,82 +133,128 @@ class DetailPopUp(BasePopUp):
             self._render_sticker_grid(self.current_pack_context, self._active_callback, query)
 
     def _go_back_to_packs(self):
+        self._stop_popup_animations()
         self.search_entry.delete(0, "end")
         self._render_pack_list(self._active_callback)
 
+    def _stop_popup_animations(self):
+        for widget in self.scroll_frame.winfo_children():
+            if isinstance(widget, ctk.CTkFrame):
+                for card in widget.winfo_children():
+                    if hasattr(card, 'anim_loop') and card.anim_loop:
+                        card.after_cancel(card.anim_loop)
+                        card.anim_loop = None
+
+    def _generate_video_thumbnail(self, path, size):
+        """Extracts first frame from video for static thumbnail."""
+        try:
+            cap = cv2.VideoCapture(path)
+            ret, frame = cap.read()
+            cap.release()
+            if ret:
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(frame)
+                pil_img.thumbnail(size, Image.Resampling.LANCZOS)
+                return ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
+        except: pass
+        return None
+
+    # ==========================================================================
+    #   RENDER LOGIC
+    # ==========================================================================
+
     def _render_pack_list(self, callback, query=""):
         self.current_view_mode = "packs"
-        self._active_callback = callback # Store for search events
-        self.back_btn.pack_forget() # Hide Back button
+        self._active_callback = callback 
+        self.back_btn.pack_forget() 
+        self._stop_popup_animations()
         
-        # Clear
         for w in self.scroll_frame.winfo_children(): w.destroy()
         
-        # Grid setup
+        if self.app.logic.selected_collection_data and "collection" in self.cover_selector_win.title().lower():
+             col_name = self.app.logic.selected_collection_data.get("name", "Collection")
+             ctk.CTkLabel(self.scroll_frame, text=f"Packs in: {col_name}", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(0, 10))
+        
         grid = ctk.CTkFrame(self.scroll_frame, fg_color="transparent")
         grid.pack(fill="both", expand=True)
         cols = 4
         for i in range(cols): grid.grid_columnconfigure(i, weight=1)
         
-        # Filter Packs
-        packs = [p for p in self.app.library_data if query in p['name'].lower()]
+        packs = [p for p in self.active_context_packs if query in p['name'].lower()]
         
         if not packs:
             ctk.CTkLabel(self.scroll_frame, text="No packs found.", text_color=COLORS["text_sub"]).pack(pady=50)
             return
 
         for i, pack in enumerate(packs):
-            if i > 50: break # Limit rendering
+            if i > 50: break 
             
-            # Mini Card
             card = ctk.CTkFrame(grid, fg_color=COLORS["card_bg"], corner_radius=8, border_width=1, border_color=COLORS["card_border"])
             card.grid(row=i//cols, column=i%cols, padx=5, pady=5, sticky="nsew")
             
-            # Thumbnail Logic
+            card.anim_loop = None 
+            card.is_animated_content = False
+            
             thumb_path = pack.get('thumbnail_path')
             if not thumb_path:
-                # Try find one
                 tname = pack['t_name']
                 base = BASE_DIR / LIBRARY_FOLDER / tname
                 if base.exists():
-                    for ext in ['.png', '.webp']:
+                    found = False
+                    for ext in ['.png', '.webp', '.gif', '.webm', '.mp4']: 
                         attempt = base / f"sticker_0{ext}"
                         if attempt.exists(): 
-                            thumb_path = str(attempt)
-                            break
-            
-            # Image
+                            thumb_path = str(attempt); found = True; break
+                    if not found:
+                        for f in base.iterdir():
+                            if f.suffix.lower() in {'.png', '.webp', '.gif', '.webm', '.mp4'}:
+                                thumb_path = str(f); break
+
             img_lbl = ctk.CTkLabel(card, text=ICON_FOLDER, font=("Arial", 32), text_color=COLORS["text_sub"])
             img_lbl.pack(pady=(10, 5), padx=10, expand=True)
+            card.image_label = img_lbl 
             
             if thumb_path:
-                try:
-                    img = load_ctk_image(thumb_path, (64, 64))
-                    if img: img_lbl.configure(image=img, text="")
-                except: pass
-            
-            # Title
+                is_anim = self.utils.is_file_animated(thumb_path)
+                card.is_animated_content = is_anim
+                card.image_path = thumb_path
+                
+                # 1. Load Static Thumbnail Immediately
+                if thumb_path.lower().endswith(('.webm', '.mp4', '.mkv')):
+                    vid_thumb = self._generate_video_thumbnail(thumb_path, (80, 80))
+                    if vid_thumb: img_lbl.configure(image=vid_thumb, text="")
+                else:
+                    self.utils.load_image_to_label(img_lbl, thumb_path, (80, 80), ICON_FOLDER, add_overlay=False)
+                
+                # 2. Always Run Animation (Staggered to prevent freeze)
+                if is_anim:
+                    def start_anim(c=card, p=thumb_path, l=img_lbl):
+                        if c.winfo_exists():
+                            self.utils.animate_card(c, p, (80, 80), l)
+                    
+                    # Stagger animations by 50ms to keep UI responsive
+                    card.after(i * 50 + 100, start_anim)
+                
+            # Simple Hover Effect (Border only)
+            card.bind("<Enter>", lambda e, c=card: c.configure(border_color=COLORS["accent"], fg_color=COLORS["card_hover"]))
+            card.bind("<Leave>", lambda e, c=card: c.configure(border_color=COLORS["card_border"], fg_color=COLORS["card_bg"]))
+
             title = pack['name']
             if len(title) > 15: title = title[:12] + "..."
             ctk.CTkLabel(card, text=title, font=FONT_SMALL, text_color=COLORS["text_main"]).pack(pady=(0, 5))
             
-            # Interaction
             cmd = lambda p=pack: self._render_sticker_grid(p, callback)
-            
-            card.bind("<Button-1>", lambda e, c=cmd: c())
-            img_lbl.bind("<Button-1>", lambda e, c=cmd: c())
-            for child in card.winfo_children():
-                child.bind("<Button-1>", lambda e, c=cmd: c())
-                
-            card.bind("<Enter>", lambda e, c=card: c.configure(border_color=COLORS["accent"], fg_color=COLORS["card_hover"]))
-            card.bind("<Leave>", lambda e, c=card: c.configure(border_color=COLORS["card_border"], fg_color=COLORS["card_bg"]))
+            self._recursive_bind_click(card, cmd)
 
     def _render_sticker_grid(self, pack_data, callback, query=""):
         self.current_view_mode = "stickers"
         self.current_pack_context = pack_data
-        self.back_btn.pack(side="left", padx=(0, 10)) # Show Back button
         
-        # Clear
+        if self.can_navigate_up:
+            self.back_btn.pack(side="left", padx=(0, 10))
+        else:
+            self.back_btn.pack_forget()
+        
         for w in self.scroll_frame.winfo_children(): w.destroy()
         
         ctk.CTkLabel(self.scroll_frame, text=f"Stickers in: {pack_data['name']}", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(0, 10))
@@ -209,11 +267,10 @@ class DetailPopUp(BasePopUp):
         base_path = BASE_DIR / LIBRARY_FOLDER / pack_data['t_name']
         sticker_files = []
         
-        # Scan folder for valid images
         if base_path.exists():
             all_files = sorted(list(base_path.iterdir()), key=lambda x: x.name)
             for f in all_files:
-                if f.suffix.lower() in {'.png', '.webp', '.gif'}:
+                if f.suffix.lower() in {'.png', '.webp', '.gif', '.webm', '.mp4'}:
                     if query and query not in f.name.lower(): continue
                     sticker_files.append(str(f))
         
@@ -224,36 +281,61 @@ class DetailPopUp(BasePopUp):
         for i, path in enumerate(sticker_files):
             if i > 100: break
             
+            # --- CARD SETUP ---
             frame = ctk.CTkFrame(grid, fg_color=COLORS["card_bg"], corner_radius=6)
             frame.grid(row=i//cols, column=i%cols, padx=4, pady=4)
             
+            frame.anim_loop = None
+            frame.is_animated_content = False
+            
             img_lbl = ctk.CTkLabel(frame, text="", width=80, height=80)
             img_lbl.pack(padx=2, pady=2)
+            frame.image_label = img_lbl
             
-            # Load
-            img = load_ctk_image(path, (80, 80))
-            if img: img_lbl.configure(image=img)
+            is_anim = self.utils.is_file_animated(path)
+            frame.is_animated_content = is_anim
+            frame.image_path = path
             
-            # Select Action
+            # 1. Load Static Thumbnail Immediately
+            if path.lower().endswith(('.webm', '.mp4', '.mkv')):
+                vid_thumb = self._generate_video_thumbnail(path, (80, 80))
+                if vid_thumb: img_lbl.configure(image=vid_thumb, text="")
+                else: img_lbl.configure(text="VID")
+            else:
+                self.utils.load_image_to_label(img_lbl, path, (80, 80), "", add_overlay=False)
+
+            # 2. Always Run Animation (Staggered)
+            if is_anim:
+                def start_anim(c=frame, p=path, l=img_lbl):
+                    if c.winfo_exists():
+                        self.utils.animate_card(c, p, (80, 80), l)
+                
+                frame.after(i * 50 + 100, start_anim)
+
             def on_click(p=path):
+                self._stop_popup_animations()
                 callback(p)
                 if self.cover_selector_win.winfo_exists():
                     self.cover_selector_win.destroy()
             
-            img_lbl.bind("<Button-1>", lambda e, c=on_click: c())
-            frame.bind("<Button-1>", lambda e, c=on_click: c())
+            self._recursive_bind_click(frame, on_click)
+            
+            # Simple Hover
             frame.bind("<Enter>", lambda e, f=frame: f.configure(fg_color=COLORS["accent"]))
             frame.bind("<Leave>", lambda e, f=frame: f.configure(fg_color=COLORS["card_bg"]))
 
+    def _recursive_bind_click(self, widget, command):
+        try:
+            widget.bind("<Button-1>", lambda e: command(), add="+")
+            for child in widget.winfo_children():
+                self._recursive_bind_click(child, command)
+        except: pass
 
     # ==========================================================================
     #   COLLECTION MANAGEMENT
     # ==========================================================================
 
     def open_collection_edit_modal(self):
-        """
-        Unified Modal for Managing a Collection (View contents, Remove, Add).
-        """
         collection_data = self.app.logic.selected_collection_data
         if not collection_data: return
 
@@ -351,9 +433,6 @@ class DetailPopUp(BasePopUp):
         refresh_add_list()
 
     def open_link_pack_modal(self):
-        """
-        Modal to link the CURRENT STANDALONE PACK to another pack/collection.
-        """
         win = self._create_base_window("Add to Collection", 500, 650)
         
         header = ctk.CTkFrame(win, fg_color="transparent")
@@ -368,7 +447,6 @@ class DetailPopUp(BasePopUp):
         self._build_link_ui(win, current_pack=current_pack)
 
     def _build_link_ui(self, win, current_pack=None, target_collection=None):
-        """Shared UI builder for linking."""
         ctrl_frame = ctk.CTkFrame(win, fg_color="transparent")
         ctrl_frame.pack(fill="x", padx=15, pady=(5, 10))
         

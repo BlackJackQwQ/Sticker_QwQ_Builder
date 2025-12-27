@@ -148,7 +148,8 @@ class PackLayout(BaseLayout):
         # 2. Image
         self._setup_image_area(self.frame)
 
-        # 3. Primary Actions
+        # 3. Primary Actions (Change Cover & Rename only)
+        # Note: "Remove Cover" and "Random Cover" are now handled inside the open_cover_selector popup
         create_modern_button(self.frame, "Change Cover", self.app.logic.open_cover_selector).pack(fill="x", padx=30, pady=(0, 5))
         self.rename_btn = create_modern_button(self.frame, "Rename", self.app.logic.toggle_rename_pack_ui)
         self.rename_btn.pack(fill="x", padx=30, pady=(0, 15))
@@ -193,7 +194,7 @@ class PackLayout(BaseLayout):
         create_action_button(self.frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.confirm_remove_pack(), ToastNotification(self.app, "Action", "Remove Pack requested.")])
 
-        # UPDATE: Padding 50
+        # Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
 
@@ -271,6 +272,7 @@ class CollectionLayout(BaseLayout):
         
         self._setup_image_area(self.frame)
         
+        # Primary Actions
         create_modern_button(self.frame, "Change Cover", self.app.logic.open_collection_cover_selector).pack(fill="x", padx=30, pady=(0, 5))
         self.rename_btn = create_modern_button(self.frame, "Rename", self.app.logic.toggle_rename_collection_ui)
         self.rename_btn.pack(fill="x", padx=30, pady=(0, 15))
@@ -302,7 +304,7 @@ class CollectionLayout(BaseLayout):
         create_action_button(self.frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.disband_collection(), ToastNotification(self.app, "Disbanded", "Collection deleted.")])
 
-        # UPDATE: Padding 50
+        # Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
     def refresh(self, data, load_id):
@@ -423,7 +425,7 @@ class StickerLayout(BaseLayout):
         
         self.batch_tags = TagSection(self.batch_view, self.app, "sticker")
 
-        # UPDATE: Padding 50
+        # Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
     def refresh(self, load_id):

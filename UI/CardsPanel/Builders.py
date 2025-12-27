@@ -12,6 +12,7 @@ from Resources.Icons import (
 
 # Constants for render sizes
 SIZE_LARGE = (320, 320)
+SIZE_NORMAL = (240, 240)
 SIZE_SMALL = (180, 180)
 SIZE_LIST  = (48, 48)
 
@@ -93,7 +94,6 @@ def create_all_stickers_card(app, utils, index: int):
         except: pass
 
     # --- Virtual Data for Details Panel ---
-    # FIX: Added 'linked_packs' and other metadata to prevent KeyError in Filters.py
     virtual_data = {
         "name": "All Stickers Library",
         "t_name": "all_library_virtual",
@@ -102,9 +102,9 @@ def create_all_stickers_card(app, utils, index: int):
         "is_favorite": False,
         "thumbnail_path": thumb_path,
         "description": "Browse all stickers from every pack in your library flattened into one view.",
-        "linked_packs": [],          # <--- Added
-        "custom_collection_name": "", # <--- Added
-        "custom_collection_tags": []  # <--- Added
+        "linked_packs": [],          
+        "custom_collection_name": "", 
+        "custom_collection_tags": []  
     }
 
     # Commands: Click -> Details, Double -> Gallery
@@ -114,7 +114,8 @@ def create_all_stickers_card(app, utils, index: int):
     # Prepare Image Logic
     if app.current_layout_mode == "Large": target_size = SIZE_LARGE
     elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
-    else: target_size = SIZE_LIST
+    elif app.current_layout_mode == "List": target_size = SIZE_LIST
+    else: target_size = SIZE_NORMAL # Default to Normal
     
     is_anim = utils.is_file_animated(thumb_path)
     card.is_animated_content = is_anim
@@ -224,9 +225,9 @@ def create_all_stickers_in_collection_card(app, utils, index: int):
         "is_favorite": False,
         "thumbnail_path": thumb_path,
         "description": f"Browse all {count} stickers contained within the '{col_name}' collection.",
-        "linked_packs": [],          # <--- Added
-        "custom_collection_name": "", # <--- Added
-        "custom_collection_tags": []  # <--- Added
+        "linked_packs": [],          
+        "custom_collection_name": "", 
+        "custom_collection_tags": []  
     }
     
     # Commands: Click -> Details, Double -> Gallery
@@ -236,7 +237,8 @@ def create_all_stickers_in_collection_card(app, utils, index: int):
     # Prepare Image Logic
     if app.current_layout_mode == "Large": target_size = SIZE_LARGE
     elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
-    else: target_size = SIZE_LIST
+    elif app.current_layout_mode == "List": target_size = SIZE_LIST
+    else: target_size = SIZE_NORMAL
     
     is_anim = utils.is_file_animated(thumb_path)
     card.is_animated_content = is_anim
@@ -329,7 +331,11 @@ def create_folder_card(app, utils, index: int, folder_data: Dict[str, Any]):
                         thumb = str(p)
                         break
 
-    target_size = SIZE_LARGE if app.current_layout_mode == "Large" else SIZE_SMALL
+    if app.current_layout_mode == "Large": target_size = SIZE_LARGE
+    elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
+    elif app.current_layout_mode == "List": target_size = SIZE_LIST
+    else: target_size = SIZE_NORMAL
+
     card.image_path = thumb
     card.placeholder_text = ICON_FOLDER
     
@@ -425,7 +431,8 @@ def create_pack_card(app, utils, index: int, pack_data: Dict[str, Any]):
 
     if app.current_layout_mode == "Large": target_size = SIZE_LARGE
     elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
-    else: target_size = SIZE_LIST
+    elif app.current_layout_mode == "List": target_size = SIZE_LIST
+    else: target_size = SIZE_NORMAL
     
     placeholder = "NSFW" if is_nsfw else "IMG"
     card.image_path = thumb_path
@@ -532,7 +539,8 @@ def create_sticker_card(app, utils, index: int, sticker_data: Dict[str, Any], pa
     
     if app.current_layout_mode == "Large": target_size = SIZE_LARGE
     elif app.current_layout_mode == "Small": target_size = SIZE_SMALL
-    else: target_size = SIZE_LIST
+    elif app.current_layout_mode == "List": target_size = SIZE_LIST
+    else: target_size = SIZE_NORMAL
     
     card.image_path = load_path
     card.placeholder_text = txt

@@ -167,11 +167,9 @@ class CardUtils:
     def load_image_to_label(self, label_widget: ctk.CTkLabel, image_path: Optional[str], size: Tuple[int, int], placeholder_text: str = "", add_overlay: bool = False):
         if not image_path:
             if placeholder_text and label_widget.winfo_exists(): 
-                # Reset to placeholder state with normal text color
                 try:
                     label_widget.configure(image=None, text=placeholder_text, text_color=COLORS["text_sub"])
                 except Exception:
-                    # Catch TclError if image=None fails (transient state issue)
                     try: label_widget.configure(text=placeholder_text)
                     except: pass
             return
@@ -192,20 +190,26 @@ class CardUtils:
                         if ctk_img: 
                             label_widget.configure(image=ctk_img, text="")
                         else:
-                            # POLISH: Show "Broken" state (Red Warning Icon) if loading failed
                             label_widget.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"])
                 except: pass
             AsyncImageLoader.load(image_path, size, on_ready)
 
     def _load_image_with_overlay_thread(self, label_widget, path, size):
         try:
+            # 1. Background: Heavy PIL Operations (Safe)
             pil_img = Image.open(path)
             pil_img.thumbnail(size, Image.Resampling.LANCZOS)
             pil_img = self._apply_play_overlay(pil_img)
-            ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
-            self.app.after(0, lambda: label_widget.configure(image=ctk_img, text="") if label_widget.winfo_exists() else None)
+            
+            # 2. Main Thread: Create CTkImage and Update UI (Safe)
+            def on_main_thread():
+                if label_widget.winfo_exists():
+                    ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img, size=size)
+                    label_widget.configure(image=ctk_img, text="")
+
+            self.app.after(0, on_main_thread)
+            
         except Exception:
-            # POLISH: Visual Feedback
             self.app.after(0, lambda: label_widget.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"]) if label_widget.winfo_exists() else None)
 
     def animate_card(self, card: ctk.CTkFrame, path: str, size: Tuple[int, int], label: ctk.CTkLabel):
@@ -237,7 +241,7 @@ class CardUtils:
             self.load_image_to_label(label, path, size, add_overlay=True)
 
     def _load_video_frames(self, card, path, size, label):
-        frames = []
+        pil_frames = [] # Use raw PIL images in thread
         try:
             cap = cv2.VideoCapture(path)
             i = 0
@@ -248,15 +252,21 @@ class CardUtils:
                 pil_img = Image.fromarray(rgb)
                 pil_img.thumbnail(size, Image.Resampling.LANCZOS)
                 pil_img = self._apply_play_overlay(pil_img)
-                frames.append(ctk.CTkImage(light_image=pil_img, size=size))
+                pil_frames.append(pil_img)
                 i += 1
             cap.release()
         except: pass
 
-        if frames:
-            self.app.after(0, lambda: self._start_animation_loop(card, frames, 50, label))
+        if pil_frames:
+            # Transfer to Main Thread for CTkImage creation
+            def on_main_thread():
+                if not card.winfo_exists(): return
+                # Create CTkImages safely on main thread
+                ctk_frames = [ctk.CTkImage(light_image=f, size=size) for f in pil_frames]
+                self._start_animation_loop(card, ctk_frames, 50, label)
+
+            self.app.after(0, on_main_thread)
         else:
-            # POLISH: Visual Feedback for video failure
             self.app.after(0, lambda: label.configure(image=None, text="⚠️", text_color=COLORS["btn_negative"]))
 
     def _start_animation_loop(self, card, frames, duration, label):

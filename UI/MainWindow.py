@@ -62,7 +62,7 @@ class StickerBotApp(ctk.CTk):
         # --- VIEW STATE ---
         self.view_mode = "library" 
         self.view_stack = []
-        # UPDATED: Set default layout mode to 'Normal'
+        # Default to Normal, but allow persistence if needed later
         self.current_layout_mode = "Normal"
         
         self.left_sidebar_visible = True
@@ -111,10 +111,19 @@ class StickerBotApp(ctk.CTk):
         if not self.client.token:
             self.after(500, lambda: self.popup_manager.open_settings_modal())
             
-        # Initial layout render
-        # UPDATED: Use 'Normal' as the startup layout
-        self.change_layout_mode("Normal")
-        self.refresh_view()
+        # Use existing mode if set, otherwise default.
+        target_mode = self.current_layout_mode if self.current_layout_mode else "Normal"
+        
+        # Sync the segmented button visual state
+        if hasattr(self, 'view_options'):
+            self.view_options.set(target_mode)
+            
+        # FIX: Directly call refresh_view if mode hasn't changed.
+        # Calling change_layout_mode would reset self.last_width = 0 and force a resize calculation.
+        if self.current_layout_mode == target_mode:
+            self.refresh_view()
+        else:
+            self.change_layout_mode(target_mode)
         
         # FIX: Auto-select a random pack to populate the sidebar
         self.logic.select_startup_item()
@@ -208,9 +217,9 @@ class StickerBotApp(ctk.CTk):
         self.page_next_btn = ctk.CTkButton(view_ctrl_group, text=">", width=30, height=35, fg_color=COLORS["card_bg"], hover_color=COLORS["card_hover"], text_color=COLORS["text_main"], command=lambda: self.logic.change_page("next"))
         self.page_next_btn.pack(side="left", padx=(2, 15))
 
-        # UPDATED: Added 'Normal' to view options and set it as default
+        # View Mode Segmented Button
         self.view_options = ctk.CTkSegmentedButton(view_ctrl_group, values=["Large", "Normal", "Small", "List"], command=self.change_layout_mode, height=35, corner_radius=10, selected_color=COLORS["seg_selected"], selected_hover_color=COLORS["seg_selected"], unselected_color=COLORS["seg_fg"], unselected_hover_color=COLORS["card_hover"], text_color=COLORS["seg_text"])
-        self.view_options.set("Normal")
+        self.view_options.set(self.current_layout_mode) # Set initial state correctly
         self.view_options.pack(side="left")
 
         # --- CONTENT AREA (Canvas) ---
@@ -367,10 +376,25 @@ class StickerBotApp(ctk.CTk):
         self.canvas.yview_moveto(0.0)
         self.update_idletasks()
         
-        # Force a resize event with a fallback width to prevent 1px glitches
-        current_w = self.canvas.winfo_width()
-        if current_w < 100: current_w = max(800, self.winfo_width()) - 300 # Rough estimate fallback
+        # FIX: Remove the forced layout update from here.
+        # We rely on the natural resize event or initial resize logic.
+        # If we force it with a possibly wrong width, it resets everything.
+        # self.after(50, self._force_layout_update) 
         
+        # Instead, manually trigger sizing ONCE using current valid state if available
+        if self.last_width > 50:
+             self.on_content_resize(type('Event', (object,), {'width': self.last_width})())
+        else:
+             # Only fallback if we have no history
+             current_w = self.canvas.winfo_width()
+             if current_w > 50:
+                 self.on_content_resize(type('Event', (object,), {'width': current_w})())
+
+    def _force_layout_update(self):
+        """Forces a layout calculation using the current window width."""
+        current_w = self.canvas.winfo_width()
+        # Fallback if canvas is not yet mapped or too small
+        if current_w < 100: current_w = max(800, self.winfo_width()) - 300 
         self.on_content_resize(type('Event', (object,), {'width': current_w})())
 
     # ==========================================================================
@@ -442,6 +466,10 @@ class StickerBotApp(ctk.CTk):
         except: pass
 
     def change_layout_mode(self, mode):
+        # Optimization: Don't re-render if mode is the same, unless forcing a refresh via other means
+        if self.current_layout_mode == mode and self.cards:
+            return
+            
         self.current_layout_mode = mode
         self.last_width = 0 
         self.refresh_view()
@@ -462,7 +490,7 @@ class StickerBotApp(ctk.CTk):
             if self.current_layout_mode == "Large":
                 min_card_width = 280 
             elif self.current_layout_mode == "Normal":
-                min_card_width = 200 # UPDATED: Logic for ~6 cards per row
+                min_card_width = 200 
             else: # Small
                 min_card_width = 160
                 
