@@ -97,18 +97,28 @@ class DetailPopUp(BasePopUp):
         actions_row = ctk.CTkFrame(self.cover_selector_win, fg_color="transparent")
         actions_row.pack(fill="x", padx=15, pady=(0, 10))
 
+        # Helper for random/remove actions to also respect the close order
+        def safe_action(value):
+            self._stop_popup_animations()
+            if self.cover_selector_win.winfo_exists():
+                self.cover_selector_win.destroy()
+            
+            # CRITICAL FIX: Force Layout Recalculation
+            self.app.last_width = 0
+            on_select_callback(value)
+
         ctk.CTkButton(
             actions_row, text=f"{ICON_RANDOM} Random Cover", 
             fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color=COLORS["text_on_accent"],
             height=30,
-            command=lambda: [on_select_callback(None), on_close()]
+            command=lambda: safe_action(None)
         ).pack(side="left", fill="x", expand=True, padx=(0, 5))
         
         ctk.CTkButton(
             actions_row, text=f"{ICON_REMOVE} Remove Cover", 
             fg_color=COLORS["btn_neutral"], hover_color=COLORS["card_border"], text_color=COLORS["text_main"],
             height=30,
-            command=lambda: [on_select_callback(""), on_close()]
+            command=lambda: safe_action("")
         ).pack(side="left", fill="x", expand=True, padx=(5, 0))
 
         # --- 4. CONTENT AREA ---
@@ -314,9 +324,18 @@ class DetailPopUp(BasePopUp):
 
             def on_click(p=path):
                 self._stop_popup_animations()
-                callback(p)
+                
+                # 1. Close the popup first
                 if self.cover_selector_win.winfo_exists():
                     self.cover_selector_win.destroy()
+                
+                # 2. CRITICAL FIX: FORCE MAIN WINDOW RELAYOUT
+                # The main window skips layout calculations if it thinks the width hasn't changed.
+                # Since we just modified data that rebuilds the grid, we MUST force it to recalculate.
+                self.app.last_width = 0
+                
+                # 3. Update Data and UI
+                callback(p)
             
             self._recursive_bind_click(frame, on_click)
             
