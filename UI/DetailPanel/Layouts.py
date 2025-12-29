@@ -39,6 +39,7 @@ class BaseLayout:
         self.image_frame: Optional[ctk.CTkFrame] = None
         self.current_img_path: Optional[str] = None
         self.current_load_id: int = 0
+        self._last_width = 0
 
     def show(self):
         self.frame.grid(row=0, column=0, sticky="nsew")
@@ -79,6 +80,16 @@ class BaseLayout:
     def _on_image_resize(self, event):
         """Triggered when the sidebar is resized."""
         if not self.current_img_path or not self.image_label: return
+        
+        # FIX: Only reload if the width changed significantly (ignore height changes from image loading)
+        current_width = event.width
+        
+        # Ignore small jitters or the vertical resize that happens when an image loads
+        if abs(current_width - self._last_width) < 5:
+            return
+
+        self._last_width = current_width
+
         # Delegate to AsyncLoader
         self.loader.request_image_load(
             self.current_img_path, 
