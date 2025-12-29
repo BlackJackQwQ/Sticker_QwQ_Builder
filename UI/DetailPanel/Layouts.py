@@ -16,7 +16,7 @@ from Resources.Icons import (
 # Imported Components (Atoms & Molecules)
 from UI.DetailPanel.Elements import (
     create_section_header, create_modern_button, create_action_button, 
-    update_fav_btn, adjust_text_size
+    update_fav_btn, update_smart_text
 )
 from UI.DetailPanel.Sections import TagSection, StatsBlock, LinkStatusSection
 
@@ -117,29 +117,25 @@ class BaseLayout:
         )
         self.image_label.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
 
-    def _make_smart_label(self, parent, base_font_size=22):
+    def _make_smart_label(self, parent, base_font_size=22, initial_text="--"):
         """
-        Creates a label that wraps text and auto-shrinks font if needed.
+        Creates a label that wraps text and auto-shrinks font using exact measurement logic.
         """
-        label = ctk.CTkLabel(parent, text="--", font=("Segoe UI", base_font_size, "bold"), text_color=COLORS["text_main"], justify="center")
+        # ADDED anchor="center" here explicitly
+        label = ctk.CTkLabel(
+            parent, 
+            text=initial_text, 
+            font=("Segoe UI", base_font_size, "bold"), 
+            text_color=COLORS["text_main"], 
+            justify="center",
+            anchor="center" 
+        )
         label.pack(fill="x")
         
         def on_resize(event):
-            # 1. Update wrapping width to match container
-            width = event.width - 10
-            if width < 50: return
-            label.configure(wraplength=width)
-            
-            # 2. Smart Font Scaling
-            # If text is very long (e.g. > 50 chars), shrink font proactively
-            text_len = len(label.cget("text") or "")
-            new_size = base_font_size
-            
-            if text_len > 30: new_size = max(14, base_font_size - 4)
-            if text_len > 60: new_size = max(12, base_font_size - 6)
-            
-            # Apply font
-            label.configure(font=("Segoe UI", new_size, "bold"))
+            # Pass the event width to the smart updater
+            # We use event.width to respond to window resizing in real-time
+            update_smart_text(label, label.cget("text"), event.width, base_font_size)
             
         parent.bind("<Configure>", on_resize)
         return label
@@ -153,8 +149,11 @@ class PackLayout(BaseLayout):
         self.setup_ui()
 
     def setup_ui(self):
-        # 1. Header
-        ctk.CTkLabel(self.frame, text="Pack Details", font=FONT_HEADER, text_color=COLORS["text_main"]).pack(pady=(20, 15), padx=10, fill="x")
+        # 1. Header (Updated to be smart resizing)
+        header_box = ctk.CTkFrame(self.frame, fg_color="transparent")
+        header_box.pack(pady=(20, 15), padx=10, fill="x")
+        # Reduced base size to 20
+        self._make_smart_label(header_box, 20, "Pack Details")
 
         # 2. Image
         self._setup_image_area(self.frame)
@@ -238,7 +237,11 @@ class PackLayout(BaseLayout):
              self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
 
         # 2. Texts
-        self.title_lbl.configure(text=data.get("name", "Unknown"))
+        name_text = data.get("name", "Unknown")
+        # IMMEDIATE UPDATE: Call logic manually to fit text right now
+        # We pass self.title_box.winfo_width() to give it the container's current size
+        update_smart_text(self.title_lbl, name_text, self.title_box.winfo_width(), 22)
+        
         self.title_lbl.pack(fill="x")
         self.title_entry.pack_forget() # Reset rename state
         self.rename_btn.configure(text="Rename")
@@ -279,7 +282,11 @@ class CollectionLayout(BaseLayout):
         self.setup_ui()
 
     def setup_ui(self):
-        ctk.CTkLabel(self.frame, text="Collection Details", font=FONT_HEADER, text_color=COLORS["text_main"]).pack(pady=(20, 15), padx=10, fill="x")
+        # Header (Updated to be smart resizing)
+        header_box = ctk.CTkFrame(self.frame, fg_color="transparent")
+        header_box.pack(pady=(20, 15), padx=10, fill="x")
+        # CHANGED: Reduced base size to 20
+        self._make_smart_label(header_box, 20, "Collection Details")
         
         self._setup_image_area(self.frame)
         
@@ -345,7 +352,9 @@ class CollectionLayout(BaseLayout):
         else:
              self.loader.request_image_load(thumb, self.image_label, self.image_frame.winfo_width(), load_id)
 
-        self.title_lbl.configure(text=data['name'])
+        # IMMEDIATE UPDATE for Collection Name
+        update_smart_text(self.title_lbl, data['name'], self.title_box.winfo_width(), 22)
+        
         self.title_lbl.pack(fill="x")
         self.title_entry.pack_forget()
         self.rename_btn.configure(text="Rename")
@@ -374,8 +383,11 @@ class StickerLayout(BaseLayout):
         self.setup_ui()
 
     def setup_ui(self):
-        # Header
-        ctk.CTkLabel(self.frame, text="Sticker Details", font=FONT_HEADER, text_color=COLORS["text_main"]).pack(pady=(20, 15), padx=10, fill="x")
+        # Header (Updated to be smart resizing)
+        header_box = ctk.CTkFrame(self.frame, fg_color="transparent")
+        header_box.pack(pady=(20, 15), padx=10, fill="x")
+        # Reduced base size to 20
+        self._make_smart_label(header_box, 20, "Sticker Details")
 
         # --- CONTAINER 1: Single Sticker View ---
         self.single_view = ctk.CTkFrame(self.frame, fg_color="transparent")
@@ -471,7 +483,10 @@ class StickerLayout(BaseLayout):
                  self.loader.request_image_load(path, self.image_label, self.image_frame.winfo_width(), load_id)
             
             # Metadata
-            self.name_lbl.configure(text=data.get('custom_name') or f"Sticker {idx+1}")
+            sticker_name = data.get('custom_name') or f"Sticker {idx+1}"
+            # IMMEDIATE UPDATE for Sticker Name
+            update_smart_text(self.name_lbl, sticker_name, self.name_box.winfo_width(), 22)
+
             self.name_lbl.pack(fill="x")
             self.name_entry.pack_forget()
             self.rename_btn.configure(text="Rename")
