@@ -16,6 +16,11 @@ ICON_CHECK    = "✓"
 ICON_EDIT     = "✎"
 ICON_SEARCH   = "🔍"
 
+# File Actions
+ICON_OPEN     = "📂" # Open File / Folder
+ICON_SHOW     = "👁"  # Show in Explorer
+ICON_GO       = "➜"  # Navigation / Open View
+
 # Navigation / Playback
 ICON_LEFT        = "«"
 ICON_RIGHT       = "»"

@@ -272,14 +272,50 @@ class AppLogic:
 
     def select_startup_item(self):
         """
-        Auto-selects a random pack on startup to populate the sidebar.
+        Auto-selects a random Pack or Collection on startup to populate the sidebar.
+        This mirrors the 'Library View' logic:
+        - It includes standalone Packs.
+        - It includes Virtual Collections (as one item).
+        - It EXCLUDES packs that are inside a collection.
+        - It EXCLUDES the virtual 'All Stickers' card.
         """
         if not self.app.library_data:
             return
 
-        # Pick a random pack
-        pack = random.choice(self.app.library_data)
-        self.current_pack_data = pack
+        candidates = []
+        processed_tnames = set()
         
-        # Update UI via DetailsManager
-        self.app.after(100, lambda: self.app.details_manager.show_pack_details(pack))
+        # 1. Build the list of valid Top-Level items (Packs & Collections)
+        for p in self.app.library_data:
+            tname = p['t_name']
+            if tname in processed_tnames: continue
+            
+            # Check relationships using FilterManager logic
+            links = self.filters.get_linked_pack_collection(p)
+            
+            if len(links) > 1:
+                # IT IS A COLLECTION
+                # Create the virtual folder object exactly like the view does
+                folder_obj = self.filters._create_virtual_folder(links)
+                candidates.append({"type": "collection", "data": folder_obj})
+                
+                # Mark all packs inside this collection as processed so they don't appear individually
+                for lp in links: processed_tnames.add(lp['t_name'])
+            else:
+                # IT IS A SINGLE PACK
+                candidates.append({"type": "pack", "data": p})
+                processed_tnames.add(tname)
+        
+        if not candidates: return
+
+        # 2. Pick one at random
+        choice = random.choice(candidates)
+        
+        # 3. Route to the correct Detail View
+        # INCREASED DELAY to 600ms to allow Main Window to stabilize geometry
+        if choice["type"] == "collection":
+            self.selected_collection_data = choice["data"]
+            self.app.after(600, lambda: self.app.details_manager.show_collection_details(choice["data"]))
+        else:
+            self.current_pack_data = choice["data"]
+            self.app.after(600, lambda: self.app.details_manager.show_pack_details(choice["data"]))

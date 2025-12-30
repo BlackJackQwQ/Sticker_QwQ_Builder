@@ -10,7 +10,7 @@ from Resources.Icons import (
     ICON_FAV_OFF, ICON_FAV_ON, ICON_FOLDER, ICON_UPDATE, ICON_REMOVE,
     ICON_ADD, ICON_SETTINGS, ICON_LINK, ICON_FILE,
     ICON_FMT_ANIM, ICON_FMT_STATIC, ICON_FMT_MIXED,
-    ICON_STATS, ICON_CLEAR
+    ICON_STATS, ICON_CLEAR, ICON_OPEN, ICON_SHOW, ICON_GO, ICON_BATCH
 )
 
 # Imported Components (Atoms & Molecules)
@@ -172,39 +172,70 @@ class PackLayout(BaseLayout):
         self.title_lbl = self._make_smart_label(self.title_box, 22)
         
         # Rename Entry (Hidden by default)
-        self.title_entry = ctk.CTkEntry(self.title_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
+        # FIX: Added text_color=COLORS["entry_text"] so text isn't invisible
+        self.title_entry = ctk.CTkEntry(
+            self.title_box, 
+            font=FONT_TITLE, 
+            justify="center", 
+            fg_color=COLORS["entry_bg"],
+            text_color=COLORS["entry_text"]
+        )
+        # Added Enter Key Bind
+        self.title_entry.bind("<Return>", lambda e: self.app.logic.toggle_rename_pack_ui())
         
         self.url_lbl = ctk.CTkLabel(self.frame, text="--", font=FONT_NORMAL, text_color=COLORS["text_sub"], cursor="hand2")
         self.url_lbl.pack(fill="x", pady=(0, 15))
         self.url_lbl.bind("<Button-1>", self.app.logic.open_url)
 
         # 5. Favorite
-        self.fav_btn = ctk.CTkButton(self.frame, height=32, font=FONT_NORMAL, corner_radius=8, command=lambda: self.app.logic.toggle_favorite("pack"))
+        # FIX: Use a container to hold the button. This allows us to pack_forget the entire container
+        # to remove the vertical space when hiding the button.
+        self.fav_container = ctk.CTkFrame(self.frame, fg_color="transparent", height=0)
+        self.fav_container.pack(fill="x") 
+        
+        self.fav_btn = ctk.CTkButton(self.fav_container, height=32, font=FONT_NORMAL, corner_radius=8, command=lambda: self.app.logic.toggle_favorite("pack"))
+        # Padding is applied to the button inside the container
         self.fav_btn.pack(fill="x", padx=30, pady=(0, 20))
 
         # 6. Components (Tags, Collections, Stats)
         self.tags = TagSection(self.frame, self.app, "pack")
         self.collection_link = LinkStatusSection(self.frame, self.app)
-        self.stats = StatsBlock(self.frame, ["Total Stickers", "Format", "Date Added", "Date Updated"])
+        self.stats = StatsBlock(self.frame, ["Total Stickers", "Format", "Date Created", "Date Updated"])
 
-        # 7. Bottom Actions
+        # 7. Actions Container (DYNAMIC)
         create_section_header(self.frame, "Actions")
-        
-        # Dynamic path getter
-        def open_folder():
-            if self.app.logic.current_pack_data:
-                p = BASE_DIR / LIBRARY_FOLDER / self.app.logic.current_pack_data['t_name']
-                open_file_location(p, False)
+        self.actions_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.actions_frame.pack(fill="x", pady=0) # Container for buttons
 
-        create_action_button(self.frame, f"{ICON_FOLDER} Open Folder", COLORS["btn_info"], COLORS["text_on_info"], open_folder)
+        # Define Buttons (Parented to actions_frame, but we control packing manually in refresh)
         
-        self.dl_btn = create_action_button(self.frame, f"{ICON_UPDATE} Download", COLORS["btn_primary"], COLORS["text_on_primary"], 
+        def get_current_path():
+            # If virtual pack (All Stickers), return root Library folder
+            is_virt = False
+            if self.app.logic.current_pack_data:
+                tags = self.app.logic.current_pack_data.get('tags', [])
+                if "System" in tags and "Aggregated" in tags: is_virt = True
+            
+            if is_virt: return BASE_DIR / LIBRARY_FOLDER
+            elif self.app.logic.current_pack_data: return BASE_DIR / LIBRARY_FOLDER / self.app.logic.current_pack_data['t_name']
+            return BASE_DIR / LIBRARY_FOLDER
+
+        self.btn_open_pack = create_action_button(self.actions_frame, f"{ICON_GO} Open Pack", COLORS["btn_primary"], COLORS["text_on_primary"], 
+                                                  lambda: self.app.show_gallery(self.app.logic.current_pack_data))
+
+        self.btn_open_file = create_action_button(self.actions_frame, f"{ICON_OPEN} Open File", COLORS["btn_info"], COLORS["text_on_info"], 
+                                                  lambda: open_file_location(get_current_path(), False))
+
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"], 
+                                                  lambda: open_file_location(get_current_path(), True))
+        
+        self.btn_dl = create_action_button(self.actions_frame, f"{ICON_UPDATE} Download", COLORS["btn_neutral"], COLORS["text_on_neutral"], 
                                            lambda: [self.app.logic.trigger_redownload(), ToastNotification(self.app, "Queued", "Pack re-download started.")])
         
-        create_action_button(self.frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
+        self.btn_remove = create_action_button(self.actions_frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.confirm_remove_pack(), ToastNotification(self.app, "Action", "Remove Pack requested.")])
 
-        # Padding
+        # Bottom Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
 
 
@@ -249,8 +280,34 @@ class PackLayout(BaseLayout):
         display_url = data.get("t_name") or data.get("url", "--").split("/")[-1]
         self.url_lbl.configure(text=display_url)
         
-        update_fav_btn(self.fav_btn, data.get('is_favorite', False), COLORS)
+        # --- DYNAMIC BUTTON LOGIC ---
+        tags = data.get('tags', [])
+        is_virtual = "System" in tags and "Aggregated" in tags
         
+        if is_virtual:
+            self.fav_container.pack_forget()
+            self.btn_open_pack.configure(text=f"{ICON_GO} Open View")
+        else:
+            self.fav_container.pack(fill="x", before=self.tags.container)
+            update_fav_btn(self.fav_btn, data.get('is_favorite', False), COLORS)
+            self.btn_open_pack.configure(text=f"{ICON_GO} Open Pack")
+            dl_txt = f"{ICON_UPDATE} Re-Download" if data.get("downloaded") else f"{ICON_UPDATE} Download Pack"
+            self.btn_dl.configure(text=dl_txt)
+
+        # Clean Slate for Actions
+        for btn in self.actions_frame.winfo_children():
+            btn.pack_forget()
+
+        # Re-pack in desired order
+        # Standard spacing handled by padding in create_action_button (pady=6)
+        self.btn_open_pack.pack(fill="x", pady=5, padx=30)
+        self.btn_open_file.pack(fill="x", pady=5, padx=30)
+        self.btn_show_file.pack(fill="x", pady=5, padx=30)
+        
+        if not is_virtual:
+            self.btn_dl.pack(fill="x", pady=5, padx=30)
+            self.btn_remove.pack(fill="x", pady=5, padx=30)
+
         # 3. Components
         self.tags.render(data.get('tags', []))
         self.collection_link.update(data)
@@ -263,15 +320,13 @@ class PackLayout(BaseLayout):
         if has_anim and not has_static: fmt = f"Animated {ICON_FMT_ANIM}"
         elif has_static and not has_anim: fmt = f"Static {ICON_FMT_STATIC}"
         
+        # UPDATED: Updated Stats Keys
         self.stats.update({
             "Total Stickers": data.get('count', 0),
-            "Date Added": data.get('added', '--'),
+            "Date Created": data.get('added', '--'),
             "Date Updated": data.get('updated', '--'),
             "Format": fmt
         })
-        
-        dl_txt = f"{ICON_UPDATE} Re-Download" if data.get("downloaded") else f"{ICON_UPDATE} Download Pack"
-        self.dl_btn.configure(text=dl_txt)
 
 
 class CollectionLayout(BaseLayout):
@@ -301,7 +356,17 @@ class CollectionLayout(BaseLayout):
         # SMART TITLE LABEL
         self.title_lbl = self._make_smart_label(self.title_box, 22)
         
-        self.title_entry = ctk.CTkEntry(self.title_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
+        # Rename Entry (Hidden by default)
+        # FIX: Added text_color=COLORS["entry_text"]
+        self.title_entry = ctk.CTkEntry(
+            self.title_box, 
+            font=FONT_TITLE, 
+            justify="center", 
+            fg_color=COLORS["entry_bg"],
+            text_color=COLORS["entry_text"]
+        )
+        # Added Enter Key Bind
+        self.title_entry.bind("<Return>", lambda e: self.app.logic.toggle_rename_collection_ui())
         
         ctk.CTkLabel(self.frame, text="(Virtual Folder)", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(pady=(0, 15))
 
@@ -314,12 +379,25 @@ class CollectionLayout(BaseLayout):
         create_action_button(self.frame, f"{ICON_SETTINGS} Edit Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
                              self.app.popup_manager.open_collection_edit_modal)
 
-        self.stats = StatsBlock(self.frame, [f"{ICON_STATS} Total Packs", f"{ICON_STATS} Total Stickers", "Format", "Date Added"])
+        self.stats = StatsBlock(self.frame, [f"{ICON_STATS} Total Packs", f"{ICON_STATS} Total Stickers", "Format", "Date Created", "Date Updated"])
 
+        # Actions Container (DYNAMIC)
         create_section_header(self.frame, "Actions")
-        create_action_button(self.frame, f"{ICON_FOLDER} Open View", COLORS["btn_info"], COLORS["text_on_info"], 
+        self.actions_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
+        self.actions_frame.pack(fill="x")
+
+        # Define Buttons
+        self.btn_open_view = create_action_button(self.actions_frame, f"{ICON_GO} Open Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
                              lambda: self.app.logic.open_collection(self.app.logic.selected_collection_data))
-        create_action_button(self.frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
+        
+        lib_path = BASE_DIR / LIBRARY_FOLDER
+        self.btn_open_file = create_action_button(self.actions_frame, f"{ICON_OPEN} Open File", COLORS["btn_info"], COLORS["text_on_info"],
+                             lambda: open_file_location(lib_path, False))
+        
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"],
+                             lambda: open_file_location(lib_path, True))
+
+        self.btn_disband = create_action_button(self.actions_frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              lambda: [self.app.logic.disband_collection(), ToastNotification(self.app, "Disbanded", "Collection deleted.")])
 
         # Padding
@@ -367,10 +445,21 @@ class CollectionLayout(BaseLayout):
             root_tags = data['packs'][0].get('custom_collection_tags', [])
         self.tags.render(root_tags)
         
+        # --- RE-PACK BUTTONS ---
+        for btn in self.actions_frame.winfo_children():
+            btn.pack_forget()
+            
+        self.btn_open_view.pack(fill="x", pady=5, padx=30)
+        self.btn_open_file.pack(fill="x", pady=5, padx=30)
+        self.btn_show_file.pack(fill="x", pady=5, padx=30)
+        self.btn_disband.pack(fill="x", pady=5, padx=30)
+        
+        # UPDATED: Updated Stats Keys including Date Updated
         self.stats.update({
             f"{ICON_STATS} Total Packs": data.get('pack_count', 0),
             f"{ICON_STATS} Total Stickers": data.get('count', 0),
-            "Date Added": data.get('added', '--'),
+            "Date Created": data.get('added', '--'),
+            "Date Updated": data.get('updated', '--'),
             "Format": "Mixed" # Simplification for collection
         })
 
@@ -404,7 +493,16 @@ class StickerLayout(BaseLayout):
         # SMART TITLE LABEL
         self.name_lbl = self._make_smart_label(self.name_box, 22)
         
-        self.name_entry = ctk.CTkEntry(self.name_box, font=FONT_TITLE, justify="center", fg_color=COLORS["entry_bg"])
+        # FIX: Added text_color=COLORS["entry_text"]
+        self.name_entry = ctk.CTkEntry(
+            self.name_box, 
+            font=FONT_TITLE, 
+            justify="center", 
+            fg_color=COLORS["entry_bg"],
+            text_color=COLORS["entry_text"]
+        )
+        # Added Enter Key Bind
+        self.name_entry.bind("<Return>", lambda e: self.app.logic.toggle_rename())
         
         self.filename_lbl = ctk.CTkLabel(self.single_view, text="file.png", font=FONT_NORMAL, text_color=COLORS["text_sub"])
         self.filename_lbl.pack(fill="x", pady=(0, 15))
@@ -413,7 +511,8 @@ class StickerLayout(BaseLayout):
         self.fav_btn.pack(fill="x", padx=30, pady=(0, 20))
 
         self.tags = TagSection(self.single_view, self.app, "sticker")
-        self.stats = StatsBlock(self.single_view, ["Format", "Last Used", "Times Used", "Date Added"])
+        # UPDATED: Added "Date Updated" here
+        self.stats = StatsBlock(self.single_view, ["Format", "Last Used", "Times Used", "Date Created", "Date Updated"])
 
         create_section_header(self.single_view, "Actions")
         
@@ -434,15 +533,20 @@ class StickerLayout(BaseLayout):
             self.app.logic.copy_sticker()
             ToastNotification(self.app, "Copied", "Image copied to clipboard.")
 
-        create_action_button(self.single_view, "Copy", COLORS["btn_positive"], COLORS["text_on_positive"], on_copy)
-        create_action_button(self.single_view, f"{ICON_LINK} Show File", COLORS["card_bg"], COLORS["text_main"], self.app.logic.show_file)
+        # Actions Container (DYNAMIC)
+        self.actions_frame = ctk.CTkFrame(self.single_view, fg_color="transparent")
+        self.actions_frame.pack(fill="x")
+
+        self.btn_copy = create_action_button(self.actions_frame, "Copy", COLORS["btn_positive"], COLORS["text_on_positive"], on_copy)
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"], self.app.logic.show_file)
 
         # --- CONTAINER 2: Batch View ---
         self.batch_view = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.batch_view.pack(fill="both", expand=True)
         self.batch_view.pack_forget() # Hide initially
         
-        ctk.CTkLabel(self.batch_view, text="📚", font=("Arial", 64), text_color=COLORS["text_sub"]).pack(pady=(50, 20))
+        # FIX: Replaced hardcoded emoji with ICON_BATCH
+        ctk.CTkLabel(self.batch_view, text=ICON_BATCH, font=("Arial", 64), text_color=COLORS["text_sub"]).pack(pady=(50, 20))
         self.batch_count_lbl = ctk.CTkLabel(self.batch_view, text="-- Items", font=FONT_DISPLAY, text_color=COLORS["text_main"])
         self.batch_count_lbl.pack(pady=(0, 30))
         
@@ -496,15 +600,23 @@ class StickerLayout(BaseLayout):
             
             self.tags.render(data.get('tags', []))
             
+            # --- RE-PACK BUTTONS ---
+            for btn in self.actions_frame.winfo_children():
+                btn.pack_forget()
+            self.btn_copy.pack(fill="x", pady=5, padx=30)
+            self.btn_show_file.pack(fill="x", pady=5, padx=30)
+            
             # Stats
             pack = next((p for p in self.app.library_data if p['t_name'] == pack_tname), None)
             is_anim = "Animated" in data.get('tags', []) or (path and path.endswith(('.gif', '.webm', '.mp4')))
             
+            # UPDATED: Updated Stats Keys, including Date Updated
             self.stats.update({
                 "Format": f"Animated {ICON_FMT_ANIM}" if is_anim else f"Static {ICON_FMT_STATIC}",
                 "Last Used": data.get('last_used', 'Never'),
                 "Times Used": str(data.get('usage_count', 0)),
-                "Date Added": pack['added'] if pack else "--"
+                "Date Created": pack['added'] if pack else "--",
+                "Date Updated": pack['updated'] if pack else "--"
             })
             
         else:

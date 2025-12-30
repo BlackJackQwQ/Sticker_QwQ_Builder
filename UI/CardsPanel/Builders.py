@@ -364,6 +364,13 @@ def create_folder_card(app, utils, index: int, folder_data: Dict[str, Any]):
         ctk.CTkLabel(info, text=folder_data['name'], font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(anchor="w")
         ctk.CTkLabel(info, text=f"Collection • {folder_data['pack_count']} Packs • {folder_data['count']} Stickers", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(anchor="w")
         
+        # ADDED: Col 2 (Status Box for Favorite)
+        status_box = ctk.CTkFrame(card, fg_color="transparent")
+        status_box.grid(row=0, column=2, sticky="e", padx=15)
+        
+        if folder_data.get('is_favorite'):
+            ctk.CTkLabel(status_box, text=ICON_FAV_ON, font=("Arial", 16), text_color=COLORS["gold"]).pack(side="right")
+        
     else:
         # Grid View
         card.grid_rowconfigure(0, weight=1)     
@@ -400,6 +407,10 @@ def create_folder_card(app, utils, index: int, folder_data: Dict[str, Any]):
         sub_row = ctk.CTkFrame(info, fg_color="transparent")
         sub_row.grid(row=1, column=0, sticky="ew", pady=(2, 0))
         ctk.CTkLabel(sub_row, text=f"{folder_data['pack_count']} Packs inside", font=FONT_CAPTION, text_color=COLORS["text_sub"]).pack(side="left")
+        
+        # ADDED: Favorite Star for Grid View
+        if folder_data.get('is_favorite'):
+            ctk.CTkLabel(sub_row, text=ICON_FAV_ON, font=FONT_NORMAL, text_color=COLORS["gold"]).pack(side="right")
 
     utils.bind_hover_effects(card, cmd_click, cmd_double)
     app.cards.append(card)
