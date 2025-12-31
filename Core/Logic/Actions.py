@@ -4,7 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 from Core.Config import BASE_DIR, LIBRARY_FOLDER
-from UI.ViewUtils import copy_to_clipboard, open_file_location, resize_image_to_temp
+from UI.ViewUtils import copy_to_clipboard, open_file_location, resize_image_to_temp, ToastNotification
 
 class ActionManager:
     """
@@ -26,11 +26,11 @@ class ActionManager:
         
         # Get requested size from UI (Detail Panel)
         # Note: Accessing UI state is necessary here as the user selects size in the view
-        size = "Original"
+        size_label = "Original"
         if hasattr(self.app, 'details_manager'):
-            size = self.app.details_manager.sticker_layout.size_var.get()
+            size_label = self.app.details_manager.sticker_layout.size_var.get()
         
-        final_path = resize_image_to_temp(path, size)
+        final_path = resize_image_to_temp(path, size_label)
         if final_path:
             copy_to_clipboard(final_path)
             
@@ -42,6 +42,10 @@ class ActionManager:
             # Refresh if single selection to show updated stats immediately
             if len(self.app.logic.selected_stickers) == 1: 
                 self.app.details_manager.update_details_panel()
+            
+            # SUCCESS NOTIFICATION with DETAILS
+            sticker_name = data.get('custom_name', 'Sticker')
+            ToastNotification(self.app, "Copied", f"'{sticker_name}' ({size_label}) copied to clipboard.")
 
     def show_file(self):
         """Opens the file explorer to the selected sticker's location."""

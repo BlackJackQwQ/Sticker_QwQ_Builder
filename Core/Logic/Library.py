@@ -16,37 +16,67 @@ class LibraryManager:
     def __init__(self, app):
         self.app = app
         
-        # UI State flags for renaming (moved from main Logic)
+        # UI State flags for renaming
         self.is_renaming_sticker: bool = False
         self.is_renaming_pack: bool = False 
         self.is_renaming_collection: bool = False
+
+    # ==========================================================================
+    #   DATA LOADING & CACHE MANAGEMENT (The Fix)
+    # ==========================================================================
 
     def load_library_data(self):
         """Initial load of data from JSON."""
         self.app.library_data = self.app.client.load_library() or []
         
-        # Populate AutoComplete sets in Controller
-        if hasattr(self.app, 'logic'):
-            self.app.logic.sticker_tags_ac.add("NSFW") 
+        # Ensure defaults structure first
+        for pack in self.app.library_data:
+            pack.setdefault('tags', [])
+            pack.setdefault('is_favorite', False)
+            pack.setdefault('linked_packs', [])
+            pack.setdefault('custom_collection_name', "") 
+            pack.setdefault('custom_collection_cover', "") 
+            pack.setdefault('custom_collection_tags', [])
             
-            for pack in self.app.library_data:
-                # Ensure defaults
-                pack.setdefault('tags', [])
-                pack.setdefault('is_favorite', False)
-                pack.setdefault('linked_packs', [])
-                pack.setdefault('custom_collection_name', "") 
-                pack.setdefault('custom_collection_cover', "") 
-                pack.setdefault('custom_collection_tags', [])
-                
-                for t in pack['tags']: self.app.logic.pack_tags_ac.add(t)
-                for t in pack.get('custom_collection_tags', []): self.app.logic.pack_tags_ac.add(t)
-                
-                for s in pack.get('stickers', []):
-                    s.setdefault('tags', [])
-                    s.setdefault('is_favorite', False)
-                    s.setdefault('usage_count', 0)
-                    for t in s['tags']: 
-                        if not is_system_tag(t): self.app.logic.sticker_tags_ac.add(t)
+            for s in pack.get('stickers', []):
+                s.setdefault('tags', [])
+                s.setdefault('is_favorite', False)
+                s.setdefault('usage_count', 0)
+
+        # Build the initial tag cache
+        self._rebuild_tag_cache()
+
+    def _rebuild_tag_cache(self):
+        """
+        GHOST BUSTER: Completely wipes and rebuilds the global tag lists 
+        based on what actually exists in the library.
+        """
+        if not hasattr(self.app, 'logic'): return
+
+        # 1. Clear existing global lists
+        self.app.logic.sticker_tags_ac.clear()
+        self.app.logic.pack_tags_ac.clear()
+        
+        # 2. Add System defaults
+        self.app.logic.sticker_tags_ac.add("NSFW")
+
+        # 3. Scan Library
+        for pack in self.app.library_data:
+            # Add Pack Tags
+            for t in pack['tags']: 
+                self.app.logic.pack_tags_ac.add(t)
+            
+            # Add Collection Tags (if it's a root of a collection)
+            for t in pack.get('custom_collection_tags', []): 
+                self.app.logic.pack_tags_ac.add(t)
+            
+            # Add Sticker Tags
+            for s in pack.get('stickers', []):
+                for t in s['tags']: 
+                    if not is_system_tag(t): 
+                        self.app.logic.sticker_tags_ac.add(t)
+        
+        logger.info("Tag cache rebuilt. Ghosts busted.")
 
     def _save(self):
         """Helper to save library state."""
@@ -59,18 +89,21 @@ class LibraryManager:
     def rename_pack_local(self, new_name: str):
         if not self.app.logic.current_pack_data: return
         
-        self.app.logic.current_pack_data['name'] = new_name.strip()
+        name_str = new_name.strip()
+        self.app.logic.current_pack_data['name'] = name_str
         self._save()
         
         # Update UI directly
         layout = self.app.details_manager.pack_layout
-        layout.title_lbl.configure(text=new_name)
+        layout.title_lbl.configure(text=name_str)
         
         self.is_renaming_pack = False
         layout.rename_btn.configure(text="Rename")
         layout.title_entry.pack_forget()
         layout.title_lbl.pack(fill="x")
         self.app.refresh_view()
+        
+        ToastNotification(self.app, "Renamed", f"Pack renamed to '{name_str}'")
 
     def toggle_rename_pack_ui(self):
         layout = self.app.details_manager.pack_layout
@@ -115,6 +148,8 @@ class LibraryManager:
              
         self.app.logic.apply_filters()
         self.app.refresh_view()
+        
+        ToastNotification(self.app, "Renamed", f"Collection renamed to '{cleaned_name}'")
 
     def toggle_rename_collection_ui(self):
         layout = self.app.details_manager.collection_layout
@@ -138,7 +173,7 @@ class LibraryManager:
         sticker_data = self.app.logic.selected_stickers[0][0]
         
         if self.is_renaming_sticker:
-            new_name = layout.name_entry.get()
+            new_name = layout.name_entry.get().strip()
             sticker_data['custom_name'] = new_name
             self._save()
             
@@ -149,6 +184,8 @@ class LibraryManager:
             
             self.app.refresh_view()
             self.is_renaming_sticker = False
+            
+            ToastNotification(self.app, "Renamed", f"Sticker renamed to '{new_name}'")
         else:
             layout.name_entry.delete(0, "end")
             layout.name_entry.insert(0, layout.name_lbl.cget("text"))
@@ -185,6 +222,8 @@ class LibraryManager:
             
             if self.app.logic.current_pack_data:
                 self.app.details_manager.show_pack_details(self.app.logic.current_pack_data)
+                
+            ToastNotification(self.app, "Collection Updated", "Packs linked successfully.")
 
     def link_pack(self, target_tname: str):
         """Links current pack to target."""
@@ -217,7 +256,6 @@ class LibraryManager:
             self.merge_packs(root_tname, new_tname)
             
         # Refresh Collection View
-        # We need to recreate the virtual folder object to see changes
         new_folder = self.app.logic._create_virtual_folder(
             self.app.logic.get_linked_pack_collection({'t_name':root_tname, 'linked_packs': []})
         )
@@ -245,7 +283,9 @@ class LibraryManager:
         target_pack['custom_collection_name'] = ""
         target_pack['custom_collection_cover'] = ""
         target_pack['custom_collection_tags'] = []
-
+        
+        # Rebuild tags because a collection tag might have become orphaned
+        self._rebuild_tag_cache()
         self._save()
 
         # Update Runtime Memory
@@ -271,14 +311,17 @@ class LibraryManager:
             p['linked_packs'] = []
             p['custom_collection_name'] = ""
             p['custom_collection_cover'] = "" 
-            
+        
+        # Rebuild tags immediately
+        self._rebuild_tag_cache()
         self._save()
+        
         self.app.logic.selected_collection_data = None
         self.app.logic.apply_filters()
         self.app.refresh_view()
         
         self.app.details_manager.collection_layout.hide()
-        ToastNotification(self.app, "Success", "Collection disbanded.")
+        ToastNotification(self.app, "Success", "Collection Disbanded Successfully.")
 
     # ==========================================================================
     #   TAGS & COVERS
@@ -317,9 +360,11 @@ class LibraryManager:
             self.app.details_manager.collection_layout.tags.render(root.get('custom_collection_tags', []))
         elif context_type == "sticker":
              self.app.details_manager.update_details_panel()
+             
+        ToastNotification(self.app, "Tag Added", f"Added tag: {val}")
 
     def confirm_remove_tag(self, prefix, tag):
-        # prefix: pack, collection, sticker
+        # 1. Remove the tag from the specific item
         if prefix == "pack":
             if self.app.logic.current_pack_data and tag in self.app.logic.current_pack_data['tags']:
                 self.app.logic.current_pack_data['tags'].remove(tag)
@@ -332,6 +377,10 @@ class LibraryManager:
             for s in self.app.logic.selected_stickers:
                 if tag in s[0]['tags']: s[0]['tags'].remove(tag)
                 
+        # 2. TRIGGER REBUILD (The specific fix)
+        self._rebuild_tag_cache()
+
+        # 3. Save and Refresh
         self._save()
         
         # Update UI
@@ -347,30 +396,22 @@ class LibraryManager:
         sel_col = self.app.logic.selected_collection_data
         if not sel_col: return
         
-        # Collection covers are actually stored as system covers now to persist across sessions better,
-        # but we also update the pack metadata for backward compatibility/redundancy.
-        
-        # 1. Update Pack Metadata
         val = path_str if path_str else ""
         for p in sel_col['packs']:
             p['custom_collection_cover'] = val
-        self._save() # Save library.json
+        self._save() 
         
-        # 2. Update System Config (New Standard)
         col_id = f"collection_{sel_col['name']}"
-        self.set_system_cover(col_id, val) # Save settings.json
+        self.set_system_cover(col_id, val)
 
-        # 3. Update Runtime Object
         sel_col['thumbnail_path'] = val
         
-        # 4. Refresh UI
         self.app.details_manager.show_collection_details(sel_col)
         self.app.refresh_view()
+        
+        ToastNotification(self.app, "Cover Updated", "Collection cover changed.")
 
     def set_system_cover(self, key: str, path_str: Optional[str]):
-        """
-        Saves a custom cover to settings.json for 'Virtual' cards like All Stickers.
-        """
         settings = load_json(SETTINGS_FILE)
         if "custom_covers" not in settings:
             settings["custom_covers"] = {}
@@ -378,25 +419,19 @@ class LibraryManager:
         if path_str:
             settings["custom_covers"][key] = path_str
         else:
-            # If resetting, remove the key so it falls back to random
             if key in settings["custom_covers"]:
                 del settings["custom_covers"][key]
                 
         save_json(settings, SETTINGS_FILE)
-        
-        # Force refresh of current view to reflect change
         self.app.refresh_view()
 
     def open_collection_cover_selector(self):
-        # Delegate to popup manager, passing the callback
         self.app.popup_manager.open_cover_selector_modal(
             "Collection Cover", 
             lambda path: self.set_collection_cover(path)
         )
 
     def open_cover_selector(self):
-        # Pack covers logic remains the same (stored in library.json)
-        # We pass a callback wrapper that updates the current pack
         def update_pack_cover(path):
             if not self.app.logic.current_pack_data: return
             if path is None:
@@ -409,6 +444,8 @@ class LibraryManager:
             self._save()
             self.app.details_manager.show_pack_details(self.app.logic.current_pack_data)
             self.app.refresh_view()
+            
+            ToastNotification(self.app, "Cover Updated", "Pack cover changed.")
 
         self.app.popup_manager.open_cover_selector_modal("Pack Cover", update_pack_cover)
 
@@ -421,7 +458,6 @@ class LibraryManager:
         win.title("Confirm")
         win.geometry("300x150")
         
-        # Avoid circular imports by importing locally or assuming utils availability
         from UI.ViewUtils import center_window, set_window_icon 
         center_window(win, 300, 150)
         set_window_icon(win)
@@ -438,11 +474,17 @@ class LibraryManager:
     def perform_remove(self):
         if self.app.logic.current_pack_data in self.app.library_data:
             self.app.library_data.remove(self.app.logic.current_pack_data)
+            
+            # TRIGGER REBUILD: Ensure tags from this deleted pack are removed from global list
+            self._rebuild_tag_cache()
+            
             self._save()
             self.app.logic.current_pack_data = None
             self.app.logic.apply_filters()
             self.app.refresh_view()
             self.app.details_manager.pack_layout.hide()
+            
+            ToastNotification(self.app, "Success", "Pack Deleted Successfully.")
 
     # ==========================================================================
     #   FAVORITES
@@ -472,7 +514,6 @@ class LibraryManager:
                 self.app.logic.apply_filters()
                 self.app.refresh_view()
         else:
-            # Stickers
             sel = self.app.logic.selected_stickers
             if not sel: return
             target_state = any(not s[0].get('is_favorite') for s in sel)

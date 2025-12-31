@@ -231,11 +231,13 @@ class PackLayout(BaseLayout):
         self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"], 
                                                   lambda: open_file_location(get_current_path(), True))
         
+        # -- UPDATED: Toast removed here, moved to Updater Logic --
         self.btn_dl = create_action_button(self.actions_frame, f"{ICON_UPDATE} Download", COLORS["btn_neutral"], COLORS["text_on_neutral"], 
-                                           lambda: [self.app.logic.trigger_redownload(), ToastNotification(self.app, "Queued", "Pack re-download started.")])
+                                           self.app.logic.trigger_redownload)
         
+        # -- UPDATED: Toast removed here, moved to Library Logic (after confirmation) --
         self.btn_remove = create_action_button(self.actions_frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
-                             lambda: [self.app.logic.confirm_remove_pack(), ToastNotification(self.app, "Action", "Remove Pack requested.")])
+                             self.app.logic.confirm_remove_pack)
 
         # Bottom Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
@@ -401,8 +403,9 @@ class CollectionLayout(BaseLayout):
         self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"],
                              lambda: open_file_location(lib_path, True))
 
+        # -- UPDATED: Toast removed here, moved to Library Logic --
         self.btn_disband = create_action_button(self.actions_frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
-                             lambda: [self.app.logic.disband_collection(), ToastNotification(self.app, "Disbanded", "Collection deleted.")])
+                             self.app.logic.disband_collection)
 
         # Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
@@ -536,7 +539,7 @@ class StickerLayout(BaseLayout):
         def on_copy():
             self.app.details_manager.size_var = self.size_var 
             self.app.logic.copy_sticker()
-            ToastNotification(self.app, "Copied", "Image copied to clipboard.")
+            # -- UPDATED: Toast removed here, moved to Logic --
 
         # Actions Container (DYNAMIC)
         self.actions_frame = ctk.CTkFrame(self.single_view, fg_color="transparent")

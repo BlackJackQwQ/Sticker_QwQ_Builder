@@ -60,7 +60,8 @@ class UpdateManager:
         """Forces a re-download of the currently viewed pack."""
         if self.app.logic.current_pack_data:
             self.downloader.add_to_queue(self.app.logic.current_pack_data, "update")
-            ToastNotification(self.app, "Queued", "Re-downloading...")
+            # SUCCESS NOTIFICATION HERE
+            ToastNotification(self.app, "Queued", "Download Queued Successfully.")
             
     def update_all_packs(self):
         """Opens the update modal which runs _run_update_check."""
