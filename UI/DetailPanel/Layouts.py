@@ -10,7 +10,8 @@ from Resources.Icons import (
     ICON_FAV_OFF, ICON_FAV_ON, ICON_FOLDER, ICON_UPDATE, ICON_REMOVE,
     ICON_ADD, ICON_SETTINGS, ICON_LINK, ICON_FILE,
     ICON_FMT_ANIM, ICON_FMT_STATIC, ICON_FMT_MIXED,
-    ICON_STATS, ICON_CLEAR, ICON_OPEN, ICON_SHOW, ICON_GO, ICON_BATCH
+    ICON_STATS, ICON_CLEAR, ICON_OPEN, ICON_SHOW, ICON_GO, ICON_BATCH,
+    ICON_ACTION
 )
 
 # Imported Components (Atoms & Molecules)
@@ -203,7 +204,8 @@ class PackLayout(BaseLayout):
         self.stats = StatsBlock(self.frame, ["Total Stickers", "Format", "Date Created", "Date Updated"])
 
         # 7. Actions Container (DYNAMIC)
-        create_section_header(self.frame, "Actions")
+        # UPDATED: Added Icon to Header
+        create_section_header(self.frame, f"{ICON_ACTION} Actions")
         self.actions_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.actions_frame.pack(fill="x", pady=0) # Container for buttons
 
@@ -375,14 +377,16 @@ class CollectionLayout(BaseLayout):
 
         self.tags = TagSection(self.frame, self.app, "collection")
         
-        create_section_header(self.frame, "Collection")
+        # UPDATED: Added Icon to Header
+        create_section_header(self.frame, f"{ICON_FOLDER} Collection")
         create_action_button(self.frame, f"{ICON_SETTINGS} Edit Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
                              self.app.popup_manager.open_collection_edit_modal)
 
         self.stats = StatsBlock(self.frame, [f"{ICON_STATS} Total Packs", f"{ICON_STATS} Total Stickers", "Format", "Date Created", "Date Updated"])
 
         # Actions Container (DYNAMIC)
-        create_section_header(self.frame, "Actions")
+        # UPDATED: Added Icon to Header
+        create_section_header(self.frame, f"{ICON_ACTION} Actions")
         self.actions_frame = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.actions_frame.pack(fill="x")
 
@@ -514,7 +518,8 @@ class StickerLayout(BaseLayout):
         # UPDATED: Added "Date Updated" here
         self.stats = StatsBlock(self.single_view, ["Format", "Last Used", "Times Used", "Date Created", "Date Updated"])
 
-        create_section_header(self.single_view, "Actions")
+        # UPDATED: Added Icon to Header
+        create_section_header(self.single_view, f"{ICON_ACTION} Actions")
         
         # Size Menu
         self.app.details_manager = type('obj', (object,), {'size_var': ctk.StringVar(value="Original")}) 

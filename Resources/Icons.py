@@ -13,8 +13,9 @@ ICON_ADD      = "+"
 ICON_REMOVE   = "×"
 ICON_SAVE     = "💾"
 ICON_CHECK    = "✓"
-ICON_EDIT     = "✎"
+ICON_EDIT     = "⚙" # Updated to Cog Wheel as requested
 ICON_SEARCH   = "🔍"
+ICON_ACTION   = "⚡" # Added
 
 # File Actions
 ICON_OPEN     = "📂" # Open File / Folder
@@ -34,12 +35,14 @@ ICON_FAV_OFF  = "☆"
 ICON_RANDOM   = "🎲"
 ICON_STATS    = "📊"
 ICON_PALETTE  = "🎨"
+ICON_INFO     = "ℹ" # Added
 
 # Cards / Library Types
 ICON_FOLDER   = "📁"
 ICON_LIBRARY  = "📚"  # Used for "All Stickers"
 ICON_BATCH    = "📚"  # Used for batch selection in Details
 ICON_FILE     = "📄"
+ICON_TAG      = "🏷"  # Added
 
 # Formats (Used in Details Panel)
 ICON_FMT_ANIM   = "🎬"
@@ -71,3 +74,5 @@ ICON_SIZE_LIST = (35, 35)
 
 # Standard padding
 CARD_PADDING   = 8
+SIDEBAR_WIDTH = 250
+DETAIL_WIDTH = 300

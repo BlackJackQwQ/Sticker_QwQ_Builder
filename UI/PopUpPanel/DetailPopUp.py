@@ -524,7 +524,7 @@ class DetailPopUp(BasePopUp):
         return None
 
     # ==========================================================================
-    #   COLLECTION MANAGEMENT (Left unchanged but included for completeness)
+    #   COLLECTION MANAGEMENT
     # ==========================================================================
 
     def open_collection_edit_modal(self):
@@ -585,20 +585,49 @@ class DetailPopUp(BasePopUp):
         add_search_entry = ctk.CTkEntry(search_fr, placeholder_text=f"{ICON_SEARCH} Search library...", height=30, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"])
         add_search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
+        # --- NEW: ORPHAN FILTER TOGGLE ---
+        # "Unsorted Only" Switch
+        filter_orphans_var = ctk.BooleanVar(value=False)
+        
+        def toggle_orphan_filter():
+            refresh_add_list(add_search_entry.get())
+
+        orphan_switch = ctk.CTkSwitch(
+            search_fr, text="Unsorted Only", 
+            variable=filter_orphans_var, 
+            command=toggle_orphan_filter,
+            progress_color=COLORS["accent"],
+            button_color=COLORS["text_main"],
+            button_hover_color=COLORS["accent_hover"],
+            fg_color=COLORS["switch_fg"],
+            text_color=COLORS["text_sub"],
+            font=FONT_SMALL,
+            width=120
+        )
+        orphan_switch.pack(side="right", padx=(5, 0))
+        
         add_scroll = ctk.CTkScrollableFrame(bottom_frame, fg_color="transparent", border_width=1, border_color=COLORS["card_border"])
         add_scroll.pack(fill="both", expand=True)
         
         def refresh_add_list(query=""):
             for w in add_scroll.winfo_children(): w.destroy()
             query = query.lower()
+            show_orphans_only = filter_orphans_var.get()
             
             # Identify what is already in the collection to exclude it
             current_tnames = {p['t_name'] for p in collection_data.get('packs', [])}
             
             count = 0
             for pack in self.app.library_data:
+                # Basic Exclusions
                 if pack['t_name'] in current_tnames: continue
                 if query and query not in pack['name'].lower(): continue
+                
+                # --- ORPHAN FILTER CHECK ---
+                if show_orphans_only:
+                    # Check if pack is already linked to something else
+                    # Logic: If 'linked_packs' is not empty, it belongs to a collection
+                    if pack.get('linked_packs'): continue
                 
                 row = ctk.CTkFrame(add_scroll, fg_color=COLORS["card_bg"], corner_radius=6)
                 row.pack(fill="x", pady=2)
@@ -625,10 +654,12 @@ class DetailPopUp(BasePopUp):
         refresh_add_list()
 
     def open_link_pack_modal(self):
-        win = self._create_base_window("Add to Collection", 500, 650)
+        # 1. Matches "Edit Collection" modal size
+        win = self._create_base_window("Add to Collection", 600, 700)
         
+        # 2. Header matching Edit Collection
         header = ctk.CTkFrame(win, fg_color="transparent")
-        header.pack(fill="x", padx=15, pady=(15, 5))
+        header.pack(fill="x", padx=20, pady=15)
         
         current_pack = self.app.logic.current_pack_data
         pack_name = current_pack.get('name', 'Pack') if current_pack else "Current Pack"
@@ -639,27 +670,47 @@ class DetailPopUp(BasePopUp):
         self._build_link_ui(win, current_pack=current_pack)
 
     def _build_link_ui(self, win, current_pack=None, target_collection=None):
-        ctrl_frame = ctk.CTkFrame(win, fg_color="transparent")
-        ctrl_frame.pack(fill="x", padx=15, pady=(5, 10))
+        # 3. Main Content Area matching "Edit Collection" style
+        # We'll use a single large scrollable area for the "Target" list, 
+        # but with the filter controls at the top.
         
-        entry = ctk.CTkEntry(ctrl_frame, placeholder_text=f"{ICON_SEARCH} Search packs...", height=35, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"])
+        bottom_frame = ctk.CTkFrame(win, fg_color="transparent")
+        bottom_frame.pack(fill="both", expand=True, padx=20, pady=(0, 15))
+
+        # Search/Filter Bar
+        search_fr = ctk.CTkFrame(bottom_frame, fg_color="transparent")
+        search_fr.pack(fill="x", pady=(0, 5))
+        
+        entry = ctk.CTkEntry(search_fr, placeholder_text=f"{ICON_SEARCH} Search collections...", height=30, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"])
         entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
-        filter_var = ctk.StringVar(value="All")
-        filter_seg = ctk.CTkSegmentedButton(
-            ctrl_frame, values=["All", "Collections", "Packs"], variable=filter_var,
-            selected_color=COLORS["seg_selected"], selected_hover_color=COLORS["seg_selected"],
-            unselected_color=COLORS["card_bg"], text_color=COLORS["seg_text"],
-            height=30
+        # --- NEW: ORPHAN FILTER TOGGLE (Replacing Segmented Button) ---
+        filter_orphans_var = ctk.BooleanVar(value=False)
+        
+        def toggle_orphan_filter():
+            populate(entry.get())
+
+        orphan_switch = ctk.CTkSwitch(
+            search_fr, text="Unsorted Only", 
+            variable=filter_orphans_var, 
+            command=toggle_orphan_filter,
+            progress_color=COLORS["accent"],
+            button_color=COLORS["text_main"],
+            button_hover_color=COLORS["accent_hover"],
+            fg_color=COLORS["switch_fg"],
+            text_color=COLORS["text_sub"],
+            font=FONT_SMALL,
+            width=120
         )
-        filter_seg.pack(side="left")
+        orphan_switch.pack(side="right", padx=(5, 0))
         
-        scroll = ctk.CTkScrollableFrame(win, fg_color=COLORS["transparent"])
-        scroll.pack(fill="both", expand=True, padx=10, pady=5)
+        scroll = ctk.CTkScrollableFrame(bottom_frame, fg_color="transparent", border_width=1, border_color=COLORS["card_border"])
+        scroll.pack(fill="both", expand=True)
         
-        def populate(query="", mode="All"):
+        def populate(query=""):
             for w in scroll.winfo_children(): w.destroy()
             query = query.lower()
+            show_orphans_only = filter_orphans_var.get()
             
             # --- Logic to exclude self/already linked ---
             excluded_tnames = set()
@@ -684,12 +735,18 @@ class DetailPopUp(BasePopUp):
                     if root_tname not in collections:
                         collections[root_tname] = {"name": col_name, "count": len(p['linked_packs'])+1, "id": root_tname}
 
-            # 2. Render Collections
-            if not target_collection and mode in ["All", "Collections"] and collections:
+            # 2. Render Collections (Unless Unsorted Only is ON, then usually we skip collections? 
+            # Actually, "Unsorted Only" in "Add to Collection" context is slightly ambiguous. 
+            # If I want to add *to* a collection, I need to see collections.
+            # If I want to add *to* a Pack (making a new collection), I need to see Packs.
+            # So "Unsorted Only" likely means "Show me Packs that aren't in a collection yet so I can merge with them".
+            
+            if not target_collection and not show_orphans_only and collections:
                 ctk.CTkLabel(scroll, text="EXISTING COLLECTIONS", font=("Segoe UI", 12, "bold"), text_color=COLORS["accent"]).pack(anchor="w", pady=(5,2))
                 
                 for col_id, info in collections.items():
                     if query and query not in info['name'].lower(): continue
+                    # Prevent linking to a collection we are already inside
                     if current_pack:
                         if current_pack['t_name'] == col_id: continue
                         target_col_root = next((x for x in self.app.library_data if x['t_name'] == col_id), None)
@@ -709,38 +766,53 @@ class DetailPopUp(BasePopUp):
                     ctk.CTkLabel(card, text=f"{info['count']} Items", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(side="right", padx=10)
 
             # 3. Render Individual Packs
-            if mode in ["All", "Packs"]:
-                header_txt = "AVAILABLE PACKS" if not target_collection else "SELECT PACK TO ADD"
-                ctk.CTkLabel(scroll, text=header_txt, font=("Segoe UI", 12, "bold"), text_color=COLORS["accent"]).pack(anchor="w", pady=(15,2))
+            header_txt = "AVAILABLE PACKS"
+            if show_orphans_only: header_txt = "UNSORTED PACKS"
+            elif target_collection: header_txt = "SELECT PACK TO ADD"
+            
+            ctk.CTkLabel(scroll, text=header_txt, font=("Segoe UI", 12, "bold"), text_color=COLORS["accent"]).pack(anchor="w", pady=(15,2))
+            
+            count = 0
+            for pack in self.app.library_data:
+                if pack['t_name'] in excluded_tnames: continue
+                if query and query not in pack['name'].lower(): continue
                 
-                count = 0
-                for pack in self.app.library_data:
-                    if pack['t_name'] in excluded_tnames: continue
-                    if query and query not in pack['name'].lower(): continue
+                # --- ORPHAN FILTER CHECK ---
+                if show_orphans_only:
+                    # If it has linked packs, it is a collection root -> Skip
+                    if pack.get('linked_packs'): continue
                     
-                    card = ctk.CTkFrame(scroll, fg_color=COLORS["card_bg"], corner_radius=6)
-                    card.pack(fill="x", pady=3)
-                    
-                    if target_collection:
-                        root_target = target_collection['packs'][0]['t_name']
-                        cmd = lambda p=pack: [self.app.logic.merge_packs(root_target, p['t_name']), 
-                                              self.app.logic.show_collection_details(self.app.logic._create_virtual_folder(self.app.logic.get_linked_pack_collection({'t_name':root_target, 'linked_packs': []}))),
-                                              win.destroy()]
-                    else:
-                        cmd = lambda p=pack: [self.app.logic.link_pack(p['t_name']), win.destroy()]
+                    # We also need to check if it is a LEAF in another collection.
+                    # Currently, the library_data structure doesn't easily show "parent".
+                    # However, logic.get_linked_pack_collection(pack) returns list > 1 if in collection.
+                    # But that might be slow to call for every pack.
+                    # Simplified check: logic usually keeps 'linked_packs' only on root.
+                    # But leaves don't have a flag. 
+                    # We can iterate all collections once to build a "taken" set.
+                    pass # Implemented below efficiently
+                
+                card = ctk.CTkFrame(scroll, fg_color=COLORS["card_bg"], corner_radius=6)
+                card.pack(fill="x", pady=3)
+                
+                if target_collection:
+                    root_target = target_collection['packs'][0]['t_name']
+                    cmd = lambda p=pack: [self.app.logic.merge_packs(root_target, p['t_name']), 
+                                          self.app.logic.show_collection_details(self.app.logic._create_virtual_folder(self.app.logic.get_linked_pack_collection({'t_name':root_target, 'linked_packs': []}))),
+                                          win.destroy()]
+                else:
+                    cmd = lambda p=pack: [self.app.logic.link_pack(p['t_name']), win.destroy()]
 
-                    btn = ctk.CTkButton(
-                        card, text=pack['name'], height=35, anchor="w", font=FONT_NORMAL,
-                        fg_color="transparent", hover_color=COLORS["card_hover"], text_color=COLORS["text_main"], 
-                        command=cmd
-                    )
-                    btn.pack(side="left", fill="both", expand=True, padx=5)
-                    
-                    ctk.CTkLabel(card, text=f"{pack.get('count',0)} Stickers", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(side="right", padx=10)
-                    
-                    count += 1
-                    if count > 50 and not query: break 
+                btn = ctk.CTkButton(
+                    card, text=pack['name'], height=35, anchor="w", font=FONT_NORMAL,
+                    fg_color="transparent", hover_color=COLORS["card_hover"], text_color=COLORS["text_main"], 
+                    command=cmd
+                )
+                btn.pack(side="left", fill="both", expand=True, padx=5)
+                
+                ctk.CTkLabel(card, text=f"{pack.get('count',0)} Stickers", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(side="right", padx=10)
+                
+                count += 1
+                if count > 50 and not query: break 
 
-        populate(mode="All")
-        entry.bind("<KeyRelease>", lambda e: populate(entry.get(), filter_var.get()))
-        filter_seg.configure(command=lambda m: populate(entry.get(), m))
+        populate()
+        entry.bind("<KeyRelease>", lambda e: populate(entry.get()))

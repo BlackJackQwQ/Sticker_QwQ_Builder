@@ -104,8 +104,9 @@ class FilterPopUp(BasePopUp):
                 ctk.CTkLabel(row, text=disp, font=FONT_NORMAL, text_color=col).pack(side="left", padx=10, pady=5)
                 
                 if not is_sys:
+                    # UPDATED: Added "Remove" text and increased width
                     ctk.CTkButton(
-                        row, text=f"{ICON_REMOVE}", width=30, height=24,
+                        row, text=f"{ICON_REMOVE} Remove", width=80, height=24,
                         fg_color=COLORS["btn_negative"], hover_color=COLORS["btn_negative_hover"], text_color=COLORS["text_on_negative"],
                         # Call logic to remove, then refresh both lists in this modal
                         command=lambda t=tag: [
@@ -181,8 +182,9 @@ class FilterPopUp(BasePopUp):
                 
                 ctk.CTkLabel(row, text=tag, font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(side="left", padx=10, pady=5)
                 
+                # UPDATED: Added "Add" text and increased width
                 ctk.CTkButton(
-                    row, text=f"{ICON_ADD}", width=40, height=24,
+                    row, text=f"{ICON_ADD} Add", width=70, height=24,
                     fg_color=COLORS["btn_positive"], hover_color=COLORS["btn_positive_hover"], text_color=COLORS["text_on_positive"],
                     command=lambda t=tag: [
                         getattr(self.app.logic, 'add_tag_manual', lambda a,b: None)(context_type, t), 
