@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from Core.Config import BASE_DIR, LIBRARY_FOLDER
-from UI.ViewUtils import COLORS, open_file_location, ToastNotification
+from UI.ViewUtils import COLORS, open_file_location, ToastNotification, Tooltip
 from Resources.Icons import (
     FONT_HEADER, FONT_DISPLAY, FONT_TITLE, FONT_NORMAL, FONT_SMALL,
     ICON_FAV_OFF, ICON_FAV_ON, ICON_FOLDER, ICON_UPDATE, ICON_REMOVE,
@@ -161,9 +161,13 @@ class PackLayout(BaseLayout):
 
         # 3. Primary Actions (Change Cover & Rename only)
         # Note: "Remove Cover" and "Random Cover" are now handled inside the open_cover_selector popup
-        create_modern_button(self.frame, "Change Cover", self.app.logic.open_cover_selector).pack(fill="x", padx=30, pady=(0, 5))
+        btn_cover = create_modern_button(self.frame, "Change Cover", self.app.logic.open_cover_selector)
+        btn_cover.pack(fill="x", padx=30, pady=(0, 5))
+        self.tooltip_cover = Tooltip(btn_cover, "Update pack thumbnail")
+
         self.rename_btn = create_modern_button(self.frame, "Rename", self.app.logic.toggle_rename_pack_ui)
         self.rename_btn.pack(fill="x", padx=30, pady=(0, 15))
+        self.tooltip_rename = Tooltip(self.rename_btn, "Edit pack name")
 
         # 4. Title & URL
         self.title_box = ctk.CTkFrame(self.frame, fg_color="transparent")
@@ -184,9 +188,26 @@ class PackLayout(BaseLayout):
         # Added Enter Key Bind
         self.title_entry.bind("<Return>", lambda e: self.app.logic.toggle_rename_pack_ui())
         
-        self.url_lbl = ctk.CTkLabel(self.frame, text="--", font=FONT_NORMAL, text_color=COLORS["text_sub"], cursor="hand2")
+        # --- MODIFIED URL LOGIC START ---
+        def copy_pack_url(event=None):
+            data = self.app.logic.current_pack_data
+            if data and data.get('url'):
+                self.app.clipboard_clear()
+                self.app.clipboard_append(data['url'])
+                self.app.update()
+                ToastNotification(self.app, "Copied", "Successfully copied pack URL link")
+
+        # Set to dynamic theme color to indicate clickable status
+        # Fallback to Bright Sky Blue if key is missing during hot-reload
+        link_color = COLORS.get("text_link", "#64D2FF")
+        
+        self.url_lbl = ctk.CTkLabel(self.frame, text="--", font=FONT_NORMAL, text_color=link_color, cursor="hand2")
         self.url_lbl.pack(fill="x", pady=(0, 15))
-        self.url_lbl.bind("<Button-1>", self.app.logic.open_url)
+        self.url_lbl.bind("<Button-1>", copy_pack_url)
+        
+        # >>> TOOLTIP INTEGRATION HERE <<<
+        self.url_tooltip = Tooltip(self.url_lbl, "Click to copy full link")
+        # --- MODIFIED URL LOGIC END ---
 
         # 5. Favorite
         # FIX: Use a container to hold the button. This allows us to pack_forget the entire container
@@ -197,6 +218,7 @@ class PackLayout(BaseLayout):
         self.fav_btn = ctk.CTkButton(self.fav_container, height=32, font=FONT_NORMAL, corner_radius=8, command=lambda: self.app.logic.toggle_favorite("pack"))
         # Padding is applied to the button inside the container
         self.fav_btn.pack(fill="x", padx=30, pady=(0, 20))
+        self.tooltip_fav = Tooltip(self.fav_btn, "Add to favorites") # Initial text
 
         # 6. Components (Tags, Collections, Stats)
         self.tags = TagSection(self.frame, self.app, "pack")
@@ -224,20 +246,23 @@ class PackLayout(BaseLayout):
 
         self.btn_open_pack = create_action_button(self.actions_frame, f"{ICON_GO} Open Pack", COLORS["btn_primary"], COLORS["text_on_primary"], 
                                                   lambda: self.app.show_gallery(self.app.logic.current_pack_data))
+        self.tooltip_open_pack = Tooltip(self.btn_open_pack, "View stickers in gallery")
 
-        self.btn_open_file = create_action_button(self.actions_frame, f"{ICON_OPEN} Open File", COLORS["btn_info"], COLORS["text_on_info"], 
-                                                  lambda: open_file_location(get_current_path(), False))
-
-        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"], 
+        # --- MERGED BUTTON: Show File ---
+        # Replaces separate "Open File" and "Show File"
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["btn_info"], COLORS["text_on_info"], 
                                                   lambda: open_file_location(get_current_path(), True))
+        self.tooltip_show_file = Tooltip(self.btn_show_file, "Reveal folder in Explorer")
         
         # -- UPDATED: Toast removed here, moved to Updater Logic --
         self.btn_dl = create_action_button(self.actions_frame, f"{ICON_UPDATE} Download", COLORS["btn_neutral"], COLORS["text_on_neutral"], 
                                            self.app.logic.trigger_redownload)
+        self.tooltip_dl = Tooltip(self.btn_dl, "Download stickers") # Initial text
         
         # -- UPDATED: Toast removed here, moved to Library Logic (after confirmation) --
         self.btn_remove = create_action_button(self.actions_frame, f"{ICON_REMOVE} Remove Pack", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              self.app.logic.confirm_remove_pack)
+        self.tooltip_remove = Tooltip(self.btn_remove, "Remove Pack from library")
 
         # Bottom Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
@@ -284,19 +309,54 @@ class PackLayout(BaseLayout):
         display_url = data.get("t_name") or data.get("url", "--").split("/")[-1]
         self.url_lbl.configure(text=display_url)
         
+        # >>> UPDATE TOOLTIP TEXT <<<
+        if self.url_tooltip:
+            self.url_tooltip.text = data.get("url", "No Link Available")
+        
         # --- DYNAMIC BUTTON LOGIC ---
         tags = data.get('tags', [])
         is_virtual = "System" in tags and "Aggregated" in tags
         
         if is_virtual:
+            # Hide specific sections for Virtual Packs (All Stickers)
             self.fav_container.pack_forget()
+            
+            # Hide Tags and Collection Link sections if present
+            if hasattr(self.tags, 'container'): self.tags.container.pack_forget()
+            # Try to hide collection link. Assuming standard structure since I can't edit Sections.py
+            try:
+                if hasattr(self.collection_link, 'container'): self.collection_link.container.pack_forget()
+                elif hasattr(self.collection_link, 'frame'): self.collection_link.frame.pack_forget()
+            except: pass
+
             self.btn_open_pack.configure(text=f"{ICON_GO} Open View")
         else:
+            # Show sections for normal packs
             self.fav_container.pack(fill="x", before=self.tags.container)
-            update_fav_btn(self.fav_btn, data.get('is_favorite', False), COLORS)
+            
+            if hasattr(self.tags, 'container'): 
+                self.tags.container.pack(fill="x", after=self.fav_container)
+            
+            try:
+                if hasattr(self.collection_link, 'container'): 
+                    self.collection_link.container.pack(fill="x", after=self.tags.container)
+                elif hasattr(self.collection_link, 'frame'):
+                    self.collection_link.frame.pack(fill="x", after=self.tags.container)
+            except: pass
+
+            is_fav = data.get('is_favorite', False)
+            update_fav_btn(self.fav_btn, is_fav, COLORS)
+            # Update Fav Tooltip and refresh if open
+            self.tooltip_fav.text = "Remove from favorites" if is_fav else "Add to favorites"
+            if self.tooltip_fav.tip_window: self.tooltip_fav.hidetip(); self.tooltip_fav.showtip()
+            
             self.btn_open_pack.configure(text=f"{ICON_GO} Open Pack")
-            dl_txt = f"{ICON_UPDATE} Re-Download" if data.get("downloaded") else f"{ICON_UPDATE} Download Pack"
+            
+            is_downloaded = data.get("downloaded")
+            dl_txt = f"{ICON_UPDATE} Re-Download" if is_downloaded else f"{ICON_UPDATE} Download Pack"
             self.btn_dl.configure(text=dl_txt)
+            # Update Download Tooltip
+            self.tooltip_dl.text = "Update sticker pack" if is_downloaded else "Download stickers"
 
         # Clean Slate for Actions
         for btn in self.actions_frame.winfo_children():
@@ -305,16 +365,18 @@ class PackLayout(BaseLayout):
         # Re-pack in desired order
         # Standard spacing handled by padding in create_action_button (pady=6)
         self.btn_open_pack.pack(fill="x", pady=5, padx=30)
-        self.btn_open_file.pack(fill="x", pady=5, padx=30)
+        
+        # REMOVED: self.btn_open_file.pack(...)
         self.btn_show_file.pack(fill="x", pady=5, padx=30)
         
         if not is_virtual:
             self.btn_dl.pack(fill="x", pady=5, padx=30)
             self.btn_remove.pack(fill="x", pady=5, padx=30)
 
-        # 3. Components
-        self.tags.render(data.get('tags', []))
-        self.collection_link.update(data)
+        # 3. Components (Only render if not virtual, though pack_forget above handles visibility)
+        if not is_virtual:
+            self.tags.render(data.get('tags', []))
+            self.collection_link.update(data)
         
         # Format detection
         stickers = data.get('stickers', [])
@@ -350,9 +412,13 @@ class CollectionLayout(BaseLayout):
         self._setup_image_area(self.frame)
         
         # Primary Actions
-        create_modern_button(self.frame, "Change Cover", self.app.logic.open_collection_cover_selector).pack(fill="x", padx=30, pady=(0, 5))
+        btn_cover = create_modern_button(self.frame, "Change Cover", self.app.logic.open_collection_cover_selector)
+        btn_cover.pack(fill="x", padx=30, pady=(0, 5))
+        self.tooltip_cover = Tooltip(btn_cover, "Update collection thumbnail")
+
         self.rename_btn = create_modern_button(self.frame, "Rename", self.app.logic.toggle_rename_collection_ui)
         self.rename_btn.pack(fill="x", padx=30, pady=(0, 15))
+        self.tooltip_rename = Tooltip(self.rename_btn, "Edit collection name")
 
         self.title_box = ctk.CTkFrame(self.frame, fg_color="transparent")
         self.title_box.pack(fill="x", padx=15, pady=(0, 5))
@@ -376,13 +442,15 @@ class CollectionLayout(BaseLayout):
 
         self.fav_btn = ctk.CTkButton(self.frame, height=32, font=FONT_NORMAL, corner_radius=8, command=lambda: self.app.logic.toggle_favorite("collection"))
         self.fav_btn.pack(fill="x", padx=30, pady=(0, 20))
+        self.tooltip_fav = Tooltip(self.fav_btn, "Add to favorites")
 
         self.tags = TagSection(self.frame, self.app, "collection")
         
         # UPDATED: Added Icon to Header
         create_section_header(self.frame, f"{ICON_FOLDER} Collection")
-        create_action_button(self.frame, f"{ICON_SETTINGS} Edit Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
+        btn_edit = create_action_button(self.frame, f"{ICON_SETTINGS} Edit Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
                              self.app.popup_manager.open_collection_edit_modal)
+        self.tooltip_edit = Tooltip(btn_edit, "Manage packs in collection")
 
         self.stats = StatsBlock(self.frame, [f"{ICON_STATS} Total Packs", f"{ICON_STATS} Total Stickers", "Format", "Date Created", "Date Updated"])
 
@@ -395,17 +463,19 @@ class CollectionLayout(BaseLayout):
         # Define Buttons
         self.btn_open_view = create_action_button(self.actions_frame, f"{ICON_GO} Open Collection", COLORS["btn_primary"], COLORS["text_on_primary"], 
                              lambda: self.app.logic.open_collection(self.app.logic.selected_collection_data))
+        self.tooltip_open_col = Tooltip(self.btn_open_view, "View stickers in collection")
         
         lib_path = BASE_DIR / LIBRARY_FOLDER
-        self.btn_open_file = create_action_button(self.actions_frame, f"{ICON_OPEN} Open File", COLORS["btn_info"], COLORS["text_on_info"],
-                             lambda: open_file_location(lib_path, False))
-        
-        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"],
+
+        # --- MERGED BUTTON: Show File ---
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["btn_info"], COLORS["text_on_info"],
                              lambda: open_file_location(lib_path, True))
+        self.tooltip_show_file = Tooltip(self.btn_show_file, "Reveal folder in Explorer")
 
         # -- UPDATED: Toast removed here, moved to Library Logic --
         self.btn_disband = create_action_button(self.actions_frame, f"{ICON_REMOVE} Disband", COLORS["btn_negative"], COLORS["text_on_negative"], 
                              self.app.logic.disband_collection)
+        self.tooltip_disband = Tooltip(self.btn_disband, "Disband collection")
 
         # Padding
         ctk.CTkFrame(self.frame, height=50, fg_color="transparent").pack()
@@ -444,7 +514,11 @@ class CollectionLayout(BaseLayout):
         self.title_entry.pack_forget()
         self.rename_btn.configure(text="Rename")
         
-        update_fav_btn(self.fav_btn, data.get('is_favorite', False), COLORS)
+        is_fav = data.get('is_favorite', False)
+        update_fav_btn(self.fav_btn, is_fav, COLORS)
+        # Update Fav Tooltip and refresh
+        self.tooltip_fav.text = "Remove from favorites" if is_fav else "Add to favorites"
+        if self.tooltip_fav.tip_window: self.tooltip_fav.hidetip(); self.tooltip_fav.showtip()
         
         # Tags for collection are stored in the root pack's custom fields
         root_tags = []
@@ -457,8 +531,10 @@ class CollectionLayout(BaseLayout):
             btn.pack_forget()
             
         self.btn_open_view.pack(fill="x", pady=5, padx=30)
-        self.btn_open_file.pack(fill="x", pady=5, padx=30)
+        
+        # REMOVED: self.btn_open_file.pack(...)
         self.btn_show_file.pack(fill="x", pady=5, padx=30)
+        
         self.btn_disband.pack(fill="x", pady=5, padx=30)
         
         # UPDATED: Updated Stats Keys including Date Updated
@@ -493,6 +569,7 @@ class StickerLayout(BaseLayout):
         
         self.rename_btn = create_modern_button(self.single_view, "Rename", self.app.logic.toggle_rename)
         self.rename_btn.pack(fill="x", padx=30, pady=(0, 15))
+        self.tooltip_rename = Tooltip(self.rename_btn, "Edit sticker name")
 
         self.name_box = ctk.CTkFrame(self.single_view, fg_color="transparent")
         self.name_box.pack(fill="x", padx=15, pady=(0, 5))
@@ -516,6 +593,7 @@ class StickerLayout(BaseLayout):
 
         self.fav_btn = ctk.CTkButton(self.single_view, height=32, font=FONT_NORMAL, corner_radius=8, command=lambda: self.app.logic.toggle_favorite("sticker"))
         self.fav_btn.pack(fill="x", padx=30, pady=(0, 20))
+        self.tooltip_fav = Tooltip(self.fav_btn, "Add to favorites")
 
         self.tags = TagSection(self.single_view, self.app, "sticker")
         # UPDATED: Added "Date Updated" here
@@ -546,7 +624,11 @@ class StickerLayout(BaseLayout):
         self.actions_frame.pack(fill="x")
 
         self.btn_copy = create_action_button(self.actions_frame, "Copy", COLORS["btn_positive"], COLORS["text_on_positive"], on_copy)
-        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["card_bg"], COLORS["text_main"], self.app.logic.show_file)
+        self.tooltip_copy = Tooltip(self.btn_copy, "Copy Sticker to clipboard")
+
+        # UPDATED: Styled as btn_info to match merged logic
+        self.btn_show_file = create_action_button(self.actions_frame, f"{ICON_SHOW} Show File", COLORS["btn_info"], COLORS["text_on_info"], self.app.logic.show_file)
+        self.tooltip_show_file = Tooltip(self.btn_show_file, "Reveal file in Explorer")
 
         # --- CONTAINER 2: Batch View ---
         self.batch_view = ctk.CTkFrame(self.frame, fg_color="transparent")
@@ -604,8 +686,12 @@ class StickerLayout(BaseLayout):
             self.rename_btn.configure(text="Rename")
             
             self.filename_lbl.configure(text=Path(path).name if path else "Unknown")
-            update_fav_btn(self.fav_btn, data.get('is_favorite', False), COLORS)
-            
+            is_fav = data.get('is_favorite', False)
+            update_fav_btn(self.fav_btn, is_fav, COLORS)
+            # Update Fav Tooltip and refresh
+            self.tooltip_fav.text = "Remove from favorites" if is_fav else "Add to favorites"
+            if self.tooltip_fav.tip_window: self.tooltip_fav.hidetip(); self.tooltip_fav.showtip()
+
             self.tags.render(data.get('tags', []))
             
             # --- RE-PACK BUTTONS ---

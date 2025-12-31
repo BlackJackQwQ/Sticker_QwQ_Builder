@@ -16,6 +16,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#1E1E2E", "bg_sidebar": "#181825",
         "card_bg": "#313244", "card_border": "#45475a", "card_hover": "#585b70",
         "text_main": "#CDD6F4", "text_sub": "#A6ADC8", "text_inv": "#1E1E2E", "text_placeholder": "gray50",
+        
+        "text_link": "#64D2FF", # Bright Light Blue (Requested)
+
         "accent": "#89B4FA", "accent_hover": "#B4BEFE", "text_on_accent": "#1E1E2E",
         "btn_positive": "#A6E3A1", "btn_positive_hover": "#94E2D5", "text_on_positive": "#1E1E2E",
         "btn_negative": "#F38BA8", "btn_negative_hover": "#EBA0AC", "text_on_negative": "#1E1E2E",
@@ -39,6 +42,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#FFF5F7", "bg_sidebar": "#FFE4E8",
         "card_bg": "#FFFFFF", "card_border": "#FFB7C5", "card_hover": "#FFF0F3",
         "text_main": "#5D4037", "text_sub": "#9E7777", "text_inv": "#FFFFFF", "text_placeholder": "gray60",
+        
+        "text_link": "#007AFF", # Vivid Blue to stand out on Pink/White
+
         "accent": "#FF69B4", "accent_hover": "#FF1493", "text_on_accent": "#FFFFFF",
         "btn_positive": "#81C784", "btn_positive_hover": "#66BB6A", "text_on_positive": "#FFFFFF",
         "btn_negative": "#E57373", "btn_negative_hover": "#EF5350", "text_on_negative": "#FFFFFF",
@@ -62,6 +68,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#0f172a", "bg_sidebar": "#020617",
         "card_bg": "#1e293b", "card_border": "#334155", "card_hover": "#475569",
         "text_main": "#f1f5f9", "text_sub": "#94a3b8", "text_inv": "#0f172a", "text_placeholder": "gray50",
+        
+        "text_link": "#38BDF8", # Sky Blue to match Ocean accent
+
         "accent": "#38bdf8", "accent_hover": "#7dd3fc", "text_on_accent": "#0f172a",
         "btn_positive": "#2dd4bf", "btn_positive_hover": "#5eead4", "text_on_positive": "#0f172a",
         "btn_negative": "#f43f5e", "btn_negative_hover": "#fb7185", "text_on_negative": "#ffffff",
@@ -85,6 +94,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#fcfbf7", "bg_sidebar": "#f0fdf4",
         "card_bg": "#ffffff", "card_border": "#bbf7d0", "card_hover": "#dcfce7",
         "text_main": "#14532d", "text_sub": "#166534", "text_inv": "#ffffff", "text_placeholder": "#86efac",
+        
+        "text_link": "#007AFF", # Vivid Blue to contrast with Green
+
         "accent": "#22c55e", "accent_hover": "#16a34a", "text_on_accent": "#ffffff",
         "btn_positive": "#4ade80", "btn_positive_hover": "#22c55e", "text_on_positive": "#14532d",
         "btn_negative": "#f87171", "btn_negative_hover": "#ef4444", "text_on_negative": "#ffffff",
@@ -108,6 +120,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#2a0a2e", "bg_sidebar": "#18041a",
         "card_bg": "#4a1252", "card_border": "#7c2a8a", "card_hover": "#a13aa1",
         "text_main": "#ffd6fc", "text_sub": "#d692d1", "text_inv": "#2a0a2e", "text_placeholder": "#8a4a85",
+        
+        "text_link": "#64D2FF", # Bright Light Blue
+
         "accent": "#ff9e64", "accent_hover": "#ffbf8f", "text_on_accent": "#2a0a2e",
         "btn_positive": "#0db9d7", "btn_positive_hover": "#5ff0ff", "text_on_positive": "#2a0a2e",
         "btn_negative": "#ff5d5d", "btn_negative_hover": "#ff8585", "text_on_negative": "#ffffff",
@@ -131,6 +146,9 @@ THEME_PALETTES: Dict[str, Dict[str, str]] = {
         "bg_main": "#f5f5f5", "bg_sidebar": "#e5e5e5",
         "card_bg": "#ffffff", "card_border": "#d4d4d4", "card_hover": "#a3a3a3",
         "text_main": "#171717", "text_sub": "#525252", "text_inv": "#ffffff", "text_placeholder": "#a3a3a3",
+        
+        "text_link": "#007AFF", # Vivid Blue to stand out in Mono
+
         "accent": "#404040", "accent_hover": "#171717", "text_on_accent": "#ffffff",
         "btn_positive": "#d4d4d4", "btn_positive_hover": "#a3a3a3", "text_on_positive": "#171717", 
         "btn_negative": "#737373", "btn_negative_hover": "#404040", "text_on_negative": "#ffffff", 

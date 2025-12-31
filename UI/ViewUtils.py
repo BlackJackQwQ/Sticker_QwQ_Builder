@@ -269,8 +269,102 @@ def format_tag_text(tag: str) -> str:
     return tag
 
 # ==============================================================================
-#   NOTIFICATIONS
+#   UI HELPER CLASSES (Tooltips, Notifications)
 # ==============================================================================
+
+class Tooltip:
+    """
+    A lightweight, themed hover tooltip.
+    Displays text in a small floating window after a delay.
+    """
+    def __init__(self, widget, text: str = ""):
+        self.widget = widget
+        self.text = text
+        self.tip_window = None
+        self.id = None
+        
+        # Bind events
+        self.widget.bind("<Enter>", self.enter)
+        self.widget.bind("<Leave>", self.leave)
+        self.widget.bind("<ButtonPress>", self.leave) # Hide on click
+
+    def enter(self, event=None):
+        self.schedule()
+
+    def leave(self, event=None):
+        self.unschedule()
+        self.hidetip()
+
+    def schedule(self):
+        self.unschedule()
+        # Delay 500ms before showing
+        self.id = self.widget.after(500, self.showtip)
+
+    def unschedule(self):
+        id_ = self.id
+        self.id = None
+        if id_:
+            self.widget.after_cancel(id_)
+
+    def showtip(self, event=None):
+        if not self.text: return
+        
+        # 1. FIXED GLITCH: Get Mouse Position (Screen relative)
+        # We offset +20px so the tooltip window does NOT spawn under the cursor.
+        # This prevents the widget from receiving a <Leave> event immediately.
+        x = self.widget.winfo_pointerx() + 20
+        y = self.widget.winfo_pointery() + 20
+        
+        # Create Floating Window
+        self.tip_window = ctk.CTkToplevel(self.widget)
+        self.tip_window.wm_overrideredirect(True) # Remove OS title bar
+        self.tip_window.wm_geometry(f"+{x}+{y}")
+        self.tip_window.attributes('-topmost', True) # Keep on top
+        
+        # 2. IMPROVED STYLING
+        # Background: Use 'card_hover' for nice contrast (lighter than sidebar)
+        # Border: Use 'text_sub' for a subtle but distinct edge
+        bg_color = COLORS.get("card_hover", "#333333")
+        border_col = COLORS.get("text_sub", "#888888")
+        text_color = COLORS.get("text_main", "#FFFFFF")
+
+        # --- TRANSPARENCY FIX (The Fix for Round Corners) ---
+        # We set the window background to a specific "chroma key" color and 
+        # tell the OS to render that color as fully transparent.
+        # This allows the rounded corners of the inner frame to be visible
+        # without the rectangular window background showing through.
+        if os.name == 'nt':
+            # Use a near-black color that is unlikely to be the actual border color
+            self.tip_window.configure(fg_color="#000001")
+            self.tip_window.attributes("-transparentcolor", "#000001")
+        else:
+            # Fallback for MacOS/Linux (usually handles transparency better natively)
+            self.tip_window.configure(fg_color="transparent")
+
+        frame = ctk.CTkFrame(
+            self.tip_window, 
+            fg_color=bg_color,
+            corner_radius=6, 
+            border_width=1, 
+            border_color=border_col
+        )
+        frame.pack(fill="both", expand=True)
+        
+        # Text Label (Smaller font, nice padding)
+        label = ctk.CTkLabel(
+            frame, 
+            text=self.text, 
+            text_color=text_color, 
+            font=("Segoe UI", 11), 
+            justify='left'
+        )
+        label.pack(padx=10, pady=5)
+
+    def hidetip(self):
+        tw = self.tip_window
+        self.tip_window = None
+        if tw:
+            tw.destroy()
 
 class ToastNotification:
     def __init__(self, master_window: ctk.CTk, title: str, message: str, duration: int = 3000):
