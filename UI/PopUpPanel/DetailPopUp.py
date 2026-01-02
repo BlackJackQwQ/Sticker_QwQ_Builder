@@ -7,7 +7,7 @@ import cv2  # Needed for video thumbnails
 from PIL import Image
 
 from UI.PopUpPanel.Base import BasePopUp
-from UI.ViewUtils import COLORS, load_ctk_image
+from UI.ViewUtils import COLORS, load_ctk_image, Tooltip
 from UI.CardsPanel.Utils import CardUtils
 from Core.Config import BASE_DIR, LIBRARY_FOLDER
 from Resources.Icons import (
@@ -118,6 +118,9 @@ class DetailPopUp(BasePopUp):
             command=self._go_back_to_packs
         )
         self.back_btn.pack(side="left")
+        # Tooltip for Back Button
+        Tooltip(self.back_btn, "Return to pack list")
+        
         # Initially hide it
         self.back_btn.pack_forget()
 
@@ -140,12 +143,15 @@ class DetailPopUp(BasePopUp):
             on_select_callback(value)
 
         # Random Button - UPDATED SIZE and FONT
-        ctk.CTkButton(
+        rand_btn = ctk.CTkButton(
             tools_row, text=f"{ICON_RANDOM}", width=85, height=35,
             font=("Arial", 24), # Increased font size for the dice icon
             fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], text_color=COLORS["text_on_accent"],
             command=lambda: safe_action(None)
-        ).pack(side="left", padx=(0, 5))
+        )
+        rand_btn.pack(side="left", padx=(0, 5))
+        # Tooltip for Random Button
+        Tooltip(rand_btn, "Pick a random cover")
         
         # --- ROW 4: CONTEXT LABEL ---
         # "Stickers in: Dogs"
@@ -195,6 +201,7 @@ class DetailPopUp(BasePopUp):
             command=lambda: self._change_page(-1)
         )
         refs['prev_btn'].pack(side="left", padx=2)
+        Tooltip(refs['prev_btn'], "Previous Page")
         
         refs['label'] = ctk.CTkLabel(
             left_fr, text="Page 1 / 1", font=FONT_SMALL, width=80, 
@@ -208,6 +215,7 @@ class DetailPopUp(BasePopUp):
             command=lambda: self._change_page(1)
         )
         refs['next_btn'].pack(side="left", padx=2)
+        Tooltip(refs['next_btn'], "Next Page")
         
         # Right: Density
         right_fr = ctk.CTkFrame(parent, fg_color="transparent")
@@ -566,11 +574,13 @@ class DetailPopUp(BasePopUp):
                 ctk.CTkLabel(row, text=pack['name'], font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(side="left", padx=10, pady=8)
                 
                 # Remove Button
-                ctk.CTkButton(
+                rem_btn = ctk.CTkButton(
                     row, text=f"{ICON_REMOVE} Remove", width=70, height=24,
                     fg_color=COLORS["btn_negative"], hover_color=COLORS["btn_negative_hover"], text_color=COLORS["text_on_negative"],
                     command=lambda p=pack: [self.app.logic.remove_pack_from_collection(p['t_name']), refresh_current_list(), refresh_add_list()]
-                ).pack(side="right", padx=10)
+                )
+                rem_btn.pack(side="right", padx=10)
+                Tooltip(rem_btn, "Remove pack from collection")
         
         # 3. BOTTOM HALF: ADD NEW PACKS
         bottom_frame = ctk.CTkFrame(win, fg_color="transparent")
@@ -605,6 +615,7 @@ class DetailPopUp(BasePopUp):
             width=120
         )
         orphan_switch.pack(side="right", padx=(5, 0))
+        Tooltip(orphan_switch, "Show only packs not in any collection")
         
         add_scroll = ctk.CTkScrollableFrame(bottom_frame, fg_color="transparent", border_width=1, border_color=COLORS["card_border"])
         add_scroll.pack(fill="both", expand=True)
@@ -635,7 +646,7 @@ class DetailPopUp(BasePopUp):
                 ctk.CTkLabel(row, text=pack['name'], font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(side="left", padx=10, pady=5)
                 
                 # Add Button
-                ctk.CTkButton(
+                add_btn = ctk.CTkButton(
                     row, text=f"{ICON_ADD} Add", width=60, height=24,
                     fg_color=COLORS["btn_positive"], hover_color=COLORS["btn_positive_hover"], text_color=COLORS["text_on_positive"],
                     command=lambda p=pack: [
@@ -643,7 +654,9 @@ class DetailPopUp(BasePopUp):
                         refresh_current_list(), 
                         refresh_add_list(add_search_entry.get())
                     ]
-                ).pack(side="right", padx=10)
+                )
+                add_btn.pack(side="right", padx=10)
+                Tooltip(add_btn, "Add pack to collection")
                 
                 count += 1
                 if count > 30 and not query: break
@@ -703,6 +716,7 @@ class DetailPopUp(BasePopUp):
             width=120
         )
         orphan_switch.pack(side="right", padx=(5, 0))
+        Tooltip(orphan_switch, "Show only packs not in any collection")
         
         scroll = ctk.CTkScrollableFrame(bottom_frame, fg_color="transparent", border_width=1, border_color=COLORS["card_border"])
         scroll.pack(fill="both", expand=True)
@@ -764,6 +778,8 @@ class DetailPopUp(BasePopUp):
                     )
                     btn.pack(side="left", fill="both", expand=True, padx=5)
                     ctk.CTkLabel(card, text=f"{info['count']} Items", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(side="right", padx=10)
+                    
+                    Tooltip(btn, "Add current pack to this collection")
 
             # 3. Render Individual Packs
             header_txt = "AVAILABLE PACKS"
@@ -810,6 +826,8 @@ class DetailPopUp(BasePopUp):
                 btn.pack(side="left", fill="both", expand=True, padx=5)
                 
                 ctk.CTkLabel(card, text=f"{pack.get('count',0)} Stickers", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(side="right", padx=10)
+                
+                Tooltip(btn, "Merge with this pack to create a collection")
                 
                 count += 1
                 if count > 50 and not query: break 

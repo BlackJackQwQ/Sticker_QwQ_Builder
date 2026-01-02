@@ -83,6 +83,7 @@ class AsyncImageLoader:
                 with Image.open(path) as pil_img:
                     pil_img.load()
                     pil_copy = pil_img.copy()
+                    # High quality downsampling for static images
                     pil_copy.thumbnail(size, Image.Resampling.LANCZOS)
                     return ctk.CTkImage(light_image=pil_copy, size=size)
             except Exception as e:
@@ -112,6 +113,7 @@ def load_ctk_image(path: str, size: Tuple[int, int]) -> Optional[ctk.CTkImage]:
         with Image.open(path) as pil_img:
             pil_img.load()
             pil_copy = pil_img.copy()
+            # High quality downsampling for static images
             pil_copy.thumbnail(size, Image.Resampling.LANCZOS)
             ctk_img = ctk.CTkImage(light_image=pil_copy, size=size)
             _IMAGE_CACHE[cache_key] = ctk_img
@@ -134,6 +136,8 @@ def load_video_frames(path: str, size: Tuple[int, int], max_frames: int = 120) -
         if not cap.isOpened(): return []
         
         count = 0
+        target_w, target_h = size
+
         while True:
             ret, frame = cap.read()
             # Stop if no frame or limit reached (prevent memory overflow)
@@ -141,8 +145,17 @@ def load_video_frames(path: str, size: Tuple[int, int], max_frames: int = 120) -
                 break
                 
             # 1. Resize Frame (OpenCV uses width, height)
-            # Use INTER_AREA for shrinking (better quality), INTER_LINEAR for zooming
-            frame = cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+            # Smart Interpolation Selection
+            h, w = frame.shape[:2]
+            
+            # If target is larger than source, use LANCZOS4 (best for upscaling)
+            if target_w > w or target_h > h:
+                interpolation = cv2.INTER_LANCZOS4
+            # If target is smaller, use AREA (best for downscaling/shrinking)
+            else:
+                interpolation = cv2.INTER_AREA
+
+            frame = cv2.resize(frame, size, interpolation=interpolation)
             
             # 2. Color Convert (OpenCV is BGR, we need RGB)
             frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -163,34 +176,125 @@ def load_video_frames(path: str, size: Tuple[int, int], max_frames: int = 120) -
     return frames
 
 def resize_image_to_temp(path: str, size_name: str) -> Optional[str]:
-    """Resizes image/converts WebP for clipboard usage."""
+    """Resizes image/converts WebP/WebM for clipboard usage. Handles GIFs and Videos correctly."""
     if not path or not os.path.exists(path): return None
     
     size_map = {"Large": 1024, "Big": 512, "Normal": 256, "Small": 128, "Tiny": 64}
     target_dim = size_map.get(size_name.split(" ")[0])
-    is_webp = path.lower().endswith(".webp")
     
-    if not target_dim and not is_webp: return path
+    path_lower = path.lower()
+    is_webp = path_lower.endswith(".webp")
+    is_webm = path_lower.endswith(".webm")
     
+    # If it's a static file and no resize needed, and not WebP/WebM, return as is.
+    if not target_dim and not is_webp and not is_webm: return path
+    
+    timestamp = int(time.time() * 1000)
+
+    # --- VIDEO (WEBM) HANDLING ---
+    if is_webm:
+        try:
+            temp_path = os.path.join(TEMP_FOLDER, f"temp_{timestamp}_{os.path.basename(path).split('.')[0]}.gif")
+            
+            cap = cv2.VideoCapture(path)
+            if not cap.isOpened(): return None
+            
+            frames = []
+            fps = cap.get(cv2.CAP_PROP_FPS) or 30
+            
+            while True:
+                ret, frame = cap.read()
+                if not ret: break
+                
+                # Convert BGR (OpenCV) to RGB (Pillow)
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                pil_img = Image.fromarray(frame)
+                
+                # Resize if needed
+                if target_dim:
+                    ratio = min(target_dim / pil_img.width, target_dim / pil_img.height)
+                    new_w = int(pil_img.width * ratio)
+                    new_h = int(pil_img.height * ratio)
+                    pil_img = pil_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                
+                frames.append(pil_img)
+            
+            cap.release()
+            
+            if frames:
+                # Calculate duration per frame in ms
+                duration = int(1000 / fps)
+                frames[0].save(
+                    temp_path, 
+                    save_all=True, 
+                    append_images=frames[1:], 
+                    loop=0, 
+                    duration=duration, 
+                    disposal=2
+                )
+                return temp_path
+            return None
+        except Exception as e:
+            logger.error(f"WebM conversion error: {e}")
+            return path # Fallback
+
+    # --- IMAGE/GIF HANDLING ---
     try:
         with Image.open(path) as img:
+            
+            # --- ANIMATED GIF HANDLING ---
+            # Check if it's animated. Note: Some single-frame GIFs might return False for is_animated.
+            is_animated = getattr(img, "is_animated", False)
+            
+            if is_animated:
+                ext = ".gif"
+                temp_path = os.path.join(TEMP_FOLDER, f"temp_{timestamp}_{os.path.basename(path).split('.')[0]}{ext}")
+                
+                frames = []
+                duration = img.info.get('duration', 100)
+                
+                # Iterate over all frames
+                for i in range(img.n_frames):
+                    img.seek(i)
+                    # Convert to RGBA for high-quality resize
+                    frame = img.copy().convert("RGBA")
+                    
+                    if target_dim:
+                        ratio = min(target_dim / img.width, target_dim / img.height)
+                        new_w = int(img.width * ratio)
+                        new_h = int(img.height * ratio)
+                        frame = frame.resize((new_w, new_h), Image.Resampling.LANCZOS)
+                    
+                    frames.append(frame)
+
+                # Save frames as GIF
+                if frames:
+                    frames[0].save(
+                        temp_path, 
+                        save_all=True, 
+                        append_images=frames[1:], 
+                        loop=0, 
+                        duration=duration, 
+                        disposal=2
+                    )
+                return temp_path
+
+            # --- STATIC IMAGE HANDLING ---
             # Determine new size if scaling needed
             if target_dim:
                 ratio = min(target_dim / img.width, target_dim / img.height)
                 new_w = int(img.width * ratio)
                 new_h = int(img.height * ratio)
+                # LANCZOS is the high-quality setting for both up/downscaling in Pillow
                 img = img.resize((new_w, new_h), Image.Resampling.LANCZOS)
                 
-            timestamp = int(time.time() * 1000)
-            
             # Convert if necessary (WebP -> PNG for better compatibility)
             ext = ".png"
-            if img.format == 'GIF' and not target_dim: ext = ".gif"
-            
             temp_path = os.path.join(TEMP_FOLDER, f"temp_{timestamp}_{os.path.basename(path).split('.')[0]}{ext}")
             
             img.save(temp_path)
             return temp_path
+            
     except Exception as e:
         logger.error(f"Resize error: {e}")
         return path
@@ -278,6 +382,9 @@ class Tooltip:
     Displays text in a small floating window after a delay.
     Includes smart positioning to stay on screen.
     """
+    # Global tracker for the single active tooltip
+    _active_tooltip = None
+
     def __init__(self, widget, text: str = ""):
         self.widget = widget
         self.text = text
@@ -308,8 +415,15 @@ class Tooltip:
             self.widget.after_cancel(id_)
 
     def showtip(self, event=None):
+        # 1. Close any existing tooltip first
+        if Tooltip._active_tooltip and Tooltip._active_tooltip != self:
+            Tooltip._active_tooltip.hidetip()
+
         if not self.text: return
         
+        # 2. Register self as the active tooltip
+        Tooltip._active_tooltip = self
+
         # Create Floating Window (Hidden initially to calculate size)
         self.tip_window = ctk.CTkToplevel(self.widget)
         self.tip_window.wm_overrideredirect(True) # Remove OS title bar
@@ -377,6 +491,10 @@ class Tooltip:
         self.tip_window.wm_geometry(f"+{x}+{y}")
 
     def hidetip(self):
+        # 3. Clear global registration if this was the active one
+        if Tooltip._active_tooltip == self:
+            Tooltip._active_tooltip = None
+
         tw = self.tip_window
         self.tip_window = None
         if tw:
