@@ -194,6 +194,11 @@ class AppLogic:
     def sort_order(self): return self.filters.sort_order
     @sort_order.setter
     def sort_order(self, val): self.filters.sort_order = val
+
+    @property
+    def only_favorites(self): return self.filters.only_favorites
+    @only_favorites.setter
+    def only_favorites(self, val): self.filters.only_favorites = val
     
     @property
     def include_tags(self): return self.filters.include_tags

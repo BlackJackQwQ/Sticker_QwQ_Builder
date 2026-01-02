@@ -166,7 +166,7 @@ class FilterManager:
             if not self.app.logic.nsfw_enabled and "NSFW" in tags: continue
             
             if self.filter_file_type != "All":
-                if self.filter_file_type == "Animated" and "Animated" not in tags and "Video" not in tags: continue
+                if self.filter_file_type == "Animated" and "Animated" not in tags: continue
                 if self.filter_file_type == "Static" and "Static" not in tags: continue
             
             if self.exclude_tags and any(t in tags for t in self.exclude_tags): continue

@@ -75,7 +75,7 @@ class StickerClient:
             if data.get("ok"):
                 return data["result"]
             else:
-                logger.warning(f"API Error for {clean_name}: {data.get('description')}")
+                logger.warning(f"API Error for {clean_name}: {data.get("description")}")
                 return None
                 
         except requests.RequestException as e:
@@ -151,7 +151,8 @@ class StickerClient:
                 output_path = base_path / f"sticker_{index}.webm"
                 with open(output_path, "wb") as f:
                     f.write(img_response.content)
-                if "Video" not in sticker['tags']: sticker['tags'].append("Video")
+                # CHANGED: Replaced "Video" tag with "Animated" to unify formats
+                if "Animated" not in sticker['tags']: sticker['tags'].append("Animated")
                 return # Stop processing, PIL cannot open this
             # --- CRITICAL FIX END ---
 
