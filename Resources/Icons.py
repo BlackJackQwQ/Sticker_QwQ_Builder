@@ -15,7 +15,7 @@ ICON_SAVE     = "💾"
 ICON_CHECK    = "✓"
 ICON_EDIT     = "⚙" # Updated to Cog Wheel as requested
 ICON_SEARCH   = "🔍"
-ICON_ACTION   = "⚡" # Added
+ICON_ACTION   = "⚡" 
 
 # File Actions
 ICON_OPEN     = "📂" # Open File / Folder
@@ -35,14 +35,14 @@ ICON_FAV_OFF  = "☆"
 ICON_RANDOM   = "🎲"
 ICON_STATS    = "📊"
 ICON_PALETTE  = "🎨"
-ICON_INFO     = "ℹ" # Added
+ICON_INFO     = "ℹ" 
 
 # Cards / Library Types
 ICON_FOLDER   = "📁"
 ICON_LIBRARY  = "📚"  # Used for "All Stickers"
 ICON_BATCH    = "📚"  # Used for batch selection in Details
 ICON_FILE     = "📄"
-ICON_TAG      = "🏷"  # Added
+ICON_TAG      = "🏷" 
 
 # Formats (Used in Details Panel)
 ICON_FMT_ANIM   = "🎬"

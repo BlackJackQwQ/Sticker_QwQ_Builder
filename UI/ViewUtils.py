@@ -276,6 +276,7 @@ class Tooltip:
     """
     A lightweight, themed hover tooltip.
     Displays text in a small floating window after a delay.
+    Includes smart positioning to stay on screen.
     """
     def __init__(self, widget, text: str = ""):
         self.widget = widget
@@ -309,19 +310,12 @@ class Tooltip:
     def showtip(self, event=None):
         if not self.text: return
         
-        # 1. FIXED GLITCH: Get Mouse Position (Screen relative)
-        # We offset +20px so the tooltip window does NOT spawn under the cursor.
-        # This prevents the widget from receiving a <Leave> event immediately.
-        x = self.widget.winfo_pointerx() + 20
-        y = self.widget.winfo_pointery() + 20
-        
-        # Create Floating Window
+        # Create Floating Window (Hidden initially to calculate size)
         self.tip_window = ctk.CTkToplevel(self.widget)
         self.tip_window.wm_overrideredirect(True) # Remove OS title bar
-        self.tip_window.wm_geometry(f"+{x}+{y}")
         self.tip_window.attributes('-topmost', True) # Keep on top
         
-        # 2. IMPROVED STYLING
+        # --- 1. STYLING ---
         # Background: Use 'card_hover' for nice contrast (lighter than sidebar)
         # Border: Use 'text_sub' for a subtle but distinct edge
         bg_color = COLORS.get("card_hover", "#333333")
@@ -329,10 +323,6 @@ class Tooltip:
         text_color = COLORS.get("text_main", "#FFFFFF")
 
         # --- TRANSPARENCY FIX (The Fix for Round Corners) ---
-        # We set the window background to a specific "chroma key" color and 
-        # tell the OS to render that color as fully transparent.
-        # This allows the rounded corners of the inner frame to be visible
-        # without the rectangular window background showing through.
         if os.name == 'nt':
             # Use a near-black color that is unlikely to be the actual border color
             self.tip_window.configure(fg_color="#000001")
@@ -350,7 +340,6 @@ class Tooltip:
         )
         frame.pack(fill="both", expand=True)
         
-        # Text Label (Smaller font, nice padding)
         label = ctk.CTkLabel(
             frame, 
             text=self.text, 
@@ -359,6 +348,33 @@ class Tooltip:
             justify='left'
         )
         label.pack(padx=10, pady=5)
+        
+        # --- 2. SMART POSITIONING ---
+        self.tip_window.update_idletasks() # Force geometry calculation
+        
+        # Get dimensions
+        tip_w = self.tip_window.winfo_reqwidth()
+        tip_h = self.tip_window.winfo_reqheight()
+        screen_w = self.tip_window.winfo_screenwidth()
+        screen_h = self.tip_window.winfo_screenheight()
+        
+        # Mouse Position
+        x = self.widget.winfo_pointerx() + 20
+        y = self.widget.winfo_pointery() + 20
+        
+        # Check Right Edge
+        if x + tip_w > screen_w:
+            x = self.widget.winfo_pointerx() - tip_w - 10 # Flip to Left
+            
+        # Check Bottom Edge
+        if y + tip_h > screen_h:
+            y = self.widget.winfo_pointery() - tip_h - 10 # Flip to Top
+            
+        # Clamp (Ensure not off-screen top/left)
+        x = max(0, x)
+        y = max(0, y)
+        
+        self.tip_window.wm_geometry(f"+{x}+{y}")
 
     def hidetip(self):
         tw = self.tip_window
