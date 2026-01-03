@@ -2,7 +2,8 @@ import customtkinter as ctk
 import random
 from typing import Dict, List, Optional, Any
 
-from UI.ViewUtils import COLORS, is_system_tag, format_tag_text
+# ADDED: Tooltip import
+from UI.ViewUtils import COLORS, is_system_tag, format_tag_text, Tooltip
 from Resources.Icons import (
     FONT_HEADER, FONT_TITLE, FONT_NORMAL, FONT_SMALL,
     ICON_ARROW_RIGHT, ICON_ARROW_DOWN, ICON_ADD, ICON_REMOVE, ICON_CLEAR
@@ -83,6 +84,8 @@ class FilterManager:
             font=FONT_SMALL, command=self.app.logic.reset_filters
         )
         self.reset_btn.pack(pady=(0, 15), padx=15, anchor="w")
+        # ADDED: Tooltip
+        Tooltip(self.reset_btn, "Reset all filters, sorting, and search queries to default.")
         
         self._build_sort_controls()
         self._build_general_filters()
@@ -98,12 +101,15 @@ class FilterManager:
         self.update_top_tags_ui()
         
         # Bottom Button to Open Modal
-        ctk.CTkButton(
+        view_all_btn = ctk.CTkButton(
             self.scroll, text="View All Tags", 
             command=self.app.popup_manager.open_all_tags_modal, 
             corner_radius=8, fg_color=COLORS["card_bg"], 
             text_color=COLORS["text_main"], hover_color=COLORS["card_border"]
-        ).pack(pady=20, fill="x", padx=15)
+        )
+        view_all_btn.pack(pady=20, fill="x", padx=15)
+        # ADDED: Tooltip
+        Tooltip(view_all_btn, "Open a window to browse and manage all available tags.")
 
     def _on_global_click(self, event):
         """
@@ -138,10 +144,17 @@ class FilterManager:
     # ==========================================================================
 
     def _build_sort_controls(self):
-        self._create_header_label("Sorting")
+        lbl = self._create_header_label("Sorting")
+        Tooltip(lbl, "Options for ordering the list.")
+        
         self.sort_opt = self._create_option_menu(["Recently Added", "Alphabetical", "Sticker Count", "Usage", "Random"])
+        # ADDED: Tooltip
+        Tooltip(self.sort_opt, "Choose criteria to sort the library items.")
+        
         self.order_opt = self._create_option_menu(["Ascending", "Descending"])
         self.order_opt.set("Descending")
+        # ADDED: Tooltip
+        Tooltip(self.order_opt, "Toggle sort direction (Ascending/Descending).")
 
     def _build_general_filters(self):
         switch_args = {
@@ -153,15 +166,24 @@ class FilterManager:
             "font": FONT_NORMAL
         }
         
-        self._create_header_label("Visibility")
+        lbl = self._create_header_label("Visibility")
+        Tooltip(lbl, "Toggle content visibility settings.")
+        
         self.nsfw_switch = ctk.CTkSwitch(self.scroll, text="Show NSFW", progress_color=COLORS["btn_negative"], **switch_args)
         self.nsfw_switch.pack(pady=2, anchor="w", padx=15)
+        # ADDED: Tooltip
+        Tooltip(self.nsfw_switch, "Allow content marked as Not Safe For Work to appear.")
         
         self.fav_switch = ctk.CTkSwitch(self.scroll, text="Favorites Only", progress_color=COLORS["btn_positive"], **switch_args)
         self.fav_switch.pack(pady=(2, 10), anchor="w", padx=15)
+        # ADDED: Tooltip
+        Tooltip(self.fav_switch, "Hide everything except your favorited packs/stickers.")
 
     def _build_file_type_controls(self):
-        self._create_header_label("File Type")
+        lbl = self._create_header_label("File Type")
+        # WORKAROUND: Bind Tooltip to Header Label since SegmentedButton crashes on bind
+        Tooltip(lbl, "Filter by file format:\n• All: Show everything\n• Static: Images only\n• Animated: GIFs/Videos only")
+        
         self.file_type_seg = ctk.CTkSegmentedButton(
             self.scroll, values=["All", "Static", "Animated"],
             command=self.app.logic.on_filter_change,
@@ -171,9 +193,12 @@ class FilterManager:
         )
         self.file_type_seg.pack(fill="x", padx=15, pady=5)
         self.file_type_seg.set("All")
+        # Tooltip REMOVED from segmented button to prevent crash
 
     def _build_tag_controls(self):
-        self._create_header_label("Tag Filter")
+        lbl = self._create_header_label("Tag Filter")
+        # WORKAROUND: Bind Tooltip to Header Label
+        Tooltip(lbl, "Control how multiple tags are handled:\n• Match All: Item must contain ALL tags.\n• Match Any: Item must contain AT LEAST ONE tag.")
         
         self.tag_match_seg = ctk.CTkSegmentedButton(
             self.scroll, values=["Match All", "Match Any"],
@@ -185,6 +210,7 @@ class FilterManager:
         )
         self.tag_match_seg.pack(fill="x", padx=15, pady=(0, 5))
         self.tag_match_seg.set("Match All")
+        # Tooltip REMOVED from segmented button to prevent crash
         
         # Search Container for relative positioning
         search_container = ctk.CTkFrame(self.scroll, fg_color="transparent")
@@ -195,6 +221,8 @@ class FilterManager:
             fg_color=COLORS["entry_bg"], border_color=COLORS["entry_border"], text_color=COLORS["entry_text"]
         )
         self.tag_filter_entry.pack(side="left", fill="x", expand=True)
+        # ADDED: Tooltip
+        Tooltip(self.tag_filter_entry, "Type a tag and press Enter to add it.\nUse the + / - buttons below to specify inclusion.")
         
         # Clear Button (Improved Search Bar)
         self.clear_tag_btn = ctk.CTkButton(
@@ -203,6 +231,8 @@ class FilterManager:
             font=("Arial", 16), command=self._clear_search_input
         )
         # Initially hidden, packed when text exists
+        # ADDED: Tooltip
+        Tooltip(self.clear_tag_btn, "Clear current tag search")
         
         self.tag_filter_entry.bind("<KeyRelease>", self.check_tag_input)
         self.tag_filter_entry.bind("<Return>", self._on_enter_pressed)
@@ -216,17 +246,23 @@ class FilterManager:
         self.tag_btn_row = ctk.CTkFrame(self.scroll, fg_color="transparent")
         self.tag_btn_row.pack(fill="x", pady=5, padx=15)
         
-        ctk.CTkButton(
+        btn_inc = ctk.CTkButton(
             self.tag_btn_row, text=f"{ICON_ADD} Include", width=80, corner_radius=8,
             fg_color=COLORS["btn_positive"], text_color=COLORS["text_on_positive"], hover_color=COLORS["btn_positive_hover"], 
             command=lambda: self.app.logic.add_filter_tag_direct(self.tag_filter_entry.get().strip(), "Include")
-        ).pack(side="left", padx=(0, 5), expand=True, fill="x")
+        )
+        btn_inc.pack(side="left", padx=(0, 5), expand=True, fill="x")
+        # ADDED: Tooltip
+        Tooltip(btn_inc, "Add the typed tag to the 'Must Have' list.")
         
-        ctk.CTkButton(
+        btn_exc = ctk.CTkButton(
             self.tag_btn_row, text="- Exclude", width=80, corner_radius=8,
             fg_color=COLORS["btn_negative"], text_color=COLORS["text_on_negative"], hover_color=COLORS["btn_negative_hover"], 
             command=lambda: self.app.logic.add_filter_tag_direct(self.tag_filter_entry.get().strip(), "Exclude")
-        ).pack(side="left", expand=True, fill="x")
+        )
+        btn_exc.pack(side="left", expand=True, fill="x")
+        # ADDED: Tooltip
+        Tooltip(btn_exc, "Add the typed tag to the 'Must NOT Have' list.")
 
     def _create_header_label(self, text: str) -> ctk.CTkLabel:
         lbl = ctk.CTkLabel(self.scroll, text=text, font=FONT_TITLE, text_color=COLORS["text_sub"])
@@ -264,6 +300,8 @@ class FilterManager:
             anchor="w", command=toggle, height=24, font=FONT_SMALL, hover_color=COLORS["card_bg"]
         )
         btn.pack(fill="x")
+        # ADDED: Tooltip
+        Tooltip(btn, "Click to expand/collapse this section.")
         
         content = ctk.CTkFrame(self.scroll, fg_color=COLORS["transparent"])
         if not is_collapsed: content.pack(fill="x", padx=15)

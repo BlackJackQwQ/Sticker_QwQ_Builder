@@ -304,6 +304,9 @@ class FilterPopUp(BasePopUp):
         )
         search_entry.pack(side="left", fill="x", expand=True)
         
+        # ADDED TOOLTIP: Search Bar
+        Tooltip(search_entry, "Search for a specific tag")
+        
         # Register this entry as the active one for global clicks
         self.active_search_entry = search_entry
         
@@ -321,6 +324,8 @@ class FilterPopUp(BasePopUp):
             font=("Arial", 16), command=clear_search
         )
         self.active_clear_btn = clear_btn # Register
+        # ADDED TOOLTIP: Clear Button
+        Tooltip(clear_btn, "Clear search")
         
         # Bind keys
         def on_search_type(event=None):
@@ -344,7 +349,7 @@ class FilterPopUp(BasePopUp):
         # --- SORT CONTROLS (Updated with Theme Colors) ---
         # 1. Sort Criteria Dropdown
         sort_var = ctk.StringVar(value="Frequency")
-        ctk.CTkOptionMenu(
+        sort_menu = ctk.CTkOptionMenu(
             filter_row, variable=sort_var, 
             values=["Frequency", "Name", "Date Add", "Recently Used", "Random"], 
             width=130, 
@@ -355,11 +360,14 @@ class FilterPopUp(BasePopUp):
             dropdown_fg_color=COLORS["card_bg"],
             dropdown_hover_color=COLORS["card_hover"],
             dropdown_text_color=COLORS["text_main"]
-        ).pack(side="left", padx=(0, 5))
+        )
+        sort_menu.pack(side="left", padx=(0, 5))
+        # ADDED TOOLTIP: Sort Criteria
+        Tooltip(sort_menu, "Choose how to sort the tags")
         
         # 2. Sort Order
         order_var = ctk.StringVar(value="Descending")
-        ctk.CTkOptionMenu(
+        order_menu = ctk.CTkOptionMenu(
             filter_row, variable=order_var, 
             values=["Descending", "Ascending"], width=120,
             fg_color=COLORS["dropdown_bg"], 
@@ -369,12 +377,16 @@ class FilterPopUp(BasePopUp):
             dropdown_fg_color=COLORS["card_bg"],
             dropdown_hover_color=COLORS["card_hover"],
             dropdown_text_color=COLORS["text_main"]
-        ).pack(side="left")
+        )
+        order_menu.pack(side="left")
+        # ADDED TOOLTIP: Sort Order
+        Tooltip(order_menu, "Toggle sort direction")
 
         # 3. System Toggle
         show_sys = ctk.BooleanVar(value=False)
-        ctk.CTkSwitch(filter_row, text="Show System", variable=show_sys, text_color=COLORS["text_sub"], progress_color=COLORS["accent"]).pack(side="right")
-        Tooltip(filter_row.winfo_children()[-1], "Show auto-assigned tags like Animated/Static")
+        sys_switch = ctk.CTkSwitch(filter_row, text="Show System", variable=show_sys, text_color=COLORS["text_sub"], progress_color=COLORS["accent"])
+        sys_switch.pack(side="right")
+        Tooltip(sys_switch, "Show auto-assigned tags like Animated/Static")
         
         scroll = ctk.CTkScrollableFrame(win, fg_color=COLORS["transparent"])
         scroll.pack(fill="both", expand=True, padx=10, pady=(0, 15))
@@ -482,6 +494,8 @@ class FilterPopUp(BasePopUp):
                     command=lambda t=tag: self._prompt_rename(t, context_is_stickers, rebuild, parent=win)
                 )
                 btn_ren.pack(side="left", padx=2)
+                # ADDED TOOLTIP
+                Tooltip(btn_ren, "Rename this tag everywhere")
                 
                 # Remove Button
                 btn_rem = ctk.CTkButton(
@@ -489,6 +503,8 @@ class FilterPopUp(BasePopUp):
                     command=lambda t=tag: self._prompt_delete(t, context_is_stickers, rebuild, parent=win)
                 )
                 btn_rem.pack(side="left", padx=2)
+                # ADDED TOOLTIP
+                Tooltip(btn_rem, "Delete this tag from all items")
 
                 # Include
                 btn_inc = ctk.CTkButton(
@@ -496,6 +512,8 @@ class FilterPopUp(BasePopUp):
                     command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Include"), win.destroy()]
                 )
                 btn_inc.pack(side="left", padx=2)
+                # ADDED TOOLTIP
+                Tooltip(btn_inc, "Show only items with this tag")
                 
                 # Exclude
                 btn_exc = ctk.CTkButton(
@@ -503,6 +521,8 @@ class FilterPopUp(BasePopUp):
                     command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Exclude"), win.destroy()]
                 )
                 btn_exc.pack(side="left", padx=2)
+                # ADDED TOOLTIP
+                Tooltip(btn_exc, "Hide items with this tag")
 
         rebuild()
         # Remove variable tracing since we are not using textvariable anymore
