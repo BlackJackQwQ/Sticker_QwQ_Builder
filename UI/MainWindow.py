@@ -125,6 +125,13 @@ class StickerBotApp(ctk.CTk):
         else:
             self.change_layout_mode(target_mode)
         
+        # FIX 2: Explicitly refresh the filter sidebar tags now that data is loaded
+        if hasattr(self.filter_manager, 'refresh_tag_buttons'):
+            self.filter_manager.refresh_tag_buttons()
+        # Fallback if method name is different in older versions, usually it's handled by reset/apply
+        elif hasattr(self.filter_manager, 'reset_all'):
+             self.filter_manager.reset_all()
+
         # FIX: Auto-select a random pack to populate the sidebar
         self.logic.select_startup_item()
 

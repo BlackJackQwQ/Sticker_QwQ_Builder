@@ -105,7 +105,16 @@ class FilterManager:
             # Inside a collection, we show the packs it contains
             if self.app.logic.current_collection_data:
                 raw_packs = self.app.logic.current_collection_data['packs'] 
-                self.app.filtered_library = sorted(raw_packs, key=lambda x: x.get('name',''), reverse=is_desc)
+                
+                # Filter packs within collection
+                filtered_packs = []
+                for p in raw_packs:
+                    if self.search_query and self.search_query not in p.get('name','').lower(): continue
+                    if self.only_favorites and not p.get('is_favorite'): continue
+                    if not check_tags(p.get('tags', [])): continue
+                    filtered_packs.append(p)
+
+                self.app.filtered_library = sorted(filtered_packs, key=lambda x: x.get('name',''), reverse=is_desc)
             else:
                 self.app.filtered_library = []
 
@@ -311,19 +320,52 @@ class FilterManager:
     # ==========================================================================
 
     def get_tag_usage(self):
-        """Calculates tag frequency for the current view context."""
+        """
+        Calculates tag frequency for the current view context.
+        FIX: Explicitly differentiate between Pack Tags and Sticker Tags based on view mode.
+        """
         usage = {}
-        pool = self.app.library_data
-        mode = self.app.view_mode
+        view_mode = self.app.view_mode
         
-        if mode == "gallery_pack" and self.app.logic.current_pack_data:
-            pool = [self.app.logic.current_pack_data]
-        elif mode in ["collection", "gallery_collection"] and self.app.logic.current_collection_data:
-            pool = self.app.logic.current_collection_data.get('packs', [])
+        # Case A: Sticker View (Gallery)
+        if view_mode in ["gallery_pack", "gallery_collection"]:
+            # Decide pool of stickers
+            if view_mode == "gallery_pack" and self.app.logic.current_pack_data:
+                # View: Single Pack Stickers
+                pool = [self.app.logic.current_pack_data]
+            elif view_mode == "gallery_collection" and self.app.logic.current_collection_data:
+                # View: All Stickers in Collection
+                pool = self.app.logic.current_collection_data.get('packs', [])
+            else:
+                # View: All Library Stickers (fallback)
+                pool = self.app.library_data
+                
+            for p in pool:
+                for s in p.get('stickers', []):
+                    for t in s.get('tags', []): 
+                        usage[t] = usage.get(t, 0) + 1
+
+        # Case B: Pack/Collection View (Library)
+        else:
+            # Decide pool of packs
+            if view_mode == "collection" and self.app.logic.current_collection_data:
+                # View: Packs inside a Collection -> Show PACK tags
+                pool = self.app.logic.current_collection_data.get('packs', [])
+            else:
+                # View: Library -> Show PACK tags from all packs
+                # Note: We iterate ALL packs in library to show global pack tag frequency
+                pool = self.app.library_data
             
-        for p in pool:
-            for s in p.get('stickers', []):
-                for t in s.get('tags', []): usage[t] = usage.get(t, 0) + 1
+            for p in pool:
+                # Add Pack Tags
+                for t in p.get('tags', []): 
+                    usage[t] = usage.get(t, 0) + 1
+                
+                # Add Collection Tags (if applicable)
+                # Usually collection tags are stored on the root pack
+                for t in p.get('custom_collection_tags', []):
+                    usage[t] = usage.get(t, 0) + 1
+
         return usage
         
     def get_most_used_stickers(self, limit=10):

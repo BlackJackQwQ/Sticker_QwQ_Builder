@@ -1,11 +1,12 @@
 import customtkinter as ctk
-from typing import Optional, List
+import random
+from typing import Optional, List, Dict
 
 from UI.PopUpPanel.Base import BasePopUp
 from UI.ViewUtils import COLORS, is_system_tag, format_tag_text, logger, Tooltip
 from Resources.Icons import (
     FONT_HEADER, FONT_TITLE, FONT_NORMAL, FONT_SMALL,
-    ICON_ADD, ICON_REMOVE, ICON_SEARCH
+    ICON_ADD, ICON_REMOVE, ICON_SEARCH, ICON_SETTINGS, ICON_CLEAR
 )
 
 class FilterPopUp(BasePopUp):
@@ -17,6 +18,42 @@ class FilterPopUp(BasePopUp):
     """
     def __init__(self, app):
         super().__init__(app)
+        
+        # Track active widgets for global click handling
+        self.active_search_entry = None
+        self.active_clear_btn = None
+        
+        # We bind to the app globally, but we'll filter events based on the active popup
+        self.app.bind_all("<Button-1>", self._on_global_click, add="+")
+
+    def _on_global_click(self, event):
+        """
+        Detects clicks anywhere. If the click is NOT inside the active search bar,
+        remove focus from it.
+        """
+        if not self.active_search_entry: return
+        
+        try:
+            clicked_widget = event.widget
+            entry_widget = self.active_search_entry
+            # CTkEntry has an internal entry widget usually named _entry or similar in structure
+            internal_entry = getattr(self.active_search_entry, "_entry", None)
+            clear_btn = self.active_clear_btn
+            
+            # Check if we clicked the entry, its internal component, or the clear button
+            if clicked_widget == entry_widget: return
+            if internal_entry and clicked_widget == internal_entry: return
+            if clear_btn and clicked_widget == clear_btn: return
+            
+            # If the entry currently has focus, remove it by focusing the main window or popup root
+            current_focus = self.app.focus_get()
+            if current_focus == internal_entry or current_focus == entry_widget:
+                # Find the top-level window of the entry to give focus back to it (the popup background)
+                top = entry_widget.winfo_toplevel()
+                top.focus_set()
+                
+        except Exception:
+            pass
 
     # ==========================================================================
     #   TAG MANAGER (Contextual)
@@ -136,7 +173,14 @@ class FilterPopUp(BasePopUp):
         search_fr = ctk.CTkFrame(bottom_frame, fg_color="transparent")
         search_fr.pack(fill="x", pady=(0, 5))
         
-        search_entry = ctk.CTkEntry(search_fr, placeholder_text=f"{ICON_SEARCH} Search or create tag...", height=30, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"])
+        search_entry = ctk.CTkEntry(
+            search_fr, 
+            placeholder_text="Search or create tag...", 
+            height=30, 
+            fg_color=COLORS["entry_bg"], 
+            text_color=COLORS["entry_text"],
+            placeholder_text_color=COLORS["text_sub"]
+        )
         search_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
         
         def add_typed_tag():
@@ -180,12 +224,6 @@ class FilterPopUp(BasePopUp):
                     current_set = set(self.app.logic.current_sticker_data.get('tags', []))
 
             # Filter Available
-            # Filter Logic:
-            # 1. Must be in known list
-            # 2. Must NOT be an auto-assigned system tag (Animated, Static, Local) - these can't be manually added
-            # 3. Must NOT be already in the set
-            # Exception: "NSFW" IS a system tag, but CAN be manually added.
-            
             candidates = []
             for t in all_known_tags:
                 if t in current_set: continue
@@ -206,7 +244,6 @@ class FilterPopUp(BasePopUp):
                 
                 ctk.CTkLabel(row, text=tag, font=FONT_NORMAL, text_color=COLORS["text_main"]).pack(side="left", padx=10, pady=5)
                 
-                # UPDATED: Added "Add" text and increased width
                 add_sub_btn = ctk.CTkButton(
                     row, text=f"{ICON_ADD} Add", width=70, height=24,
                     fg_color=COLORS["btn_positive"], hover_color=COLORS["btn_positive_hover"], text_color=COLORS["text_on_positive"],
@@ -234,41 +271,107 @@ class FilterPopUp(BasePopUp):
 
     def open_all_tags_modal(self):
         # 1. Determine Context based on View Mode
-        # "library" / "collection" = Pack Context
-        # "gallery_pack" / "gallery_collection" = Sticker Context
         view_mode = getattr(self.app, 'view_mode', 'library')
-        
-        # Explicit check: Are we viewing stickers or packs?
         context_is_stickers = view_mode in ["gallery_pack", "gallery_collection"]
         context_label = "Sticker Tags" if context_is_stickers else "Pack Tags"
         
         # 2. Get the Allowlist for this context
-        # We only want to show tags that belong to this type
         if context_is_stickers:
             valid_tags_for_context = self.app.logic.sticker_tags_ac
         else:
             valid_tags_for_context = self.app.logic.pack_tags_ac
 
-        win = self._create_base_window(f"All Tags ({context_label})", 480, 680)
+        # WIDENED WINDOW for buttons
+        win = self._create_base_window(f"All Tags ({context_label})", 750, 680)
         
         ctrl = ctk.CTkFrame(win, fg_color=COLORS["transparent"])
         ctrl.pack(fill="x", padx=15, pady=(15, 10))
         ctk.CTkLabel(ctrl, text="Manage Tags", font=FONT_HEADER, text_color=COLORS["text_main"]).pack(anchor="center", pady=(0, 2))
         ctk.CTkLabel(ctrl, text=f"Showing {context_label}", font=FONT_NORMAL, text_color=COLORS["accent"]).pack(anchor="center", pady=(0, 10))
 
-        search_var = ctk.StringVar()
-        ctk.CTkEntry(
-            ctrl, textvariable=search_var, placeholder_text=f"{ICON_SEARCH} Search...", height=32, 
-            fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"]
-        ).pack(fill="x", pady=(0, 10))
+        # --- SEARCH BAR ---
+        search_fr = ctk.CTkFrame(ctrl, fg_color="transparent")
+        search_fr.pack(fill="x", pady=(0, 10))
+        
+        # Removed textvariable to avoid conflicts with placeholder
+        search_entry = ctk.CTkEntry(
+            search_fr, 
+            placeholder_text="Search...",  # Added placeholder here
+            height=32, 
+            fg_color=COLORS["entry_bg"], 
+            text_color=COLORS["entry_text"],
+            placeholder_text_color=COLORS["text_sub"] # Ensure visibility
+        )
+        search_entry.pack(side="left", fill="x", expand=True)
+        
+        # Register this entry as the active one for global clicks
+        self.active_search_entry = search_entry
+        
+        # Clear Button
+        def clear_search():
+            search_entry.delete(0, "end")
+            # Trigger focus loss to potentially show placeholder if empty
+            win.focus_set()
+            rebuild()
+            clear_btn.pack_forget()
+            
+        clear_btn = ctk.CTkButton(
+            search_fr, text="×", width=24, height=24,
+            fg_color="transparent", hover_color=COLORS["card_hover"], text_color=COLORS["text_sub"],
+            font=("Arial", 16), command=clear_search
+        )
+        self.active_clear_btn = clear_btn # Register
+        
+        # Bind keys
+        def on_search_type(event=None):
+            # If text exists, show clear button. If empty, hide it.
+            if search_entry.get():
+                clear_btn.pack(side="right", padx=(5, 0))
+            else:
+                clear_btn.pack_forget()
+            rebuild()
+            
+        def on_escape(event=None):
+            clear_search()
+            
+        search_entry.bind("<KeyRelease>", on_search_type)
+        search_entry.bind("<Escape>", on_escape)
+        
         
         filter_row = ctk.CTkFrame(ctrl, fg_color="transparent")
         filter_row.pack(fill="x")
         
+        # --- SORT CONTROLS (Updated with Theme Colors) ---
+        # 1. Sort Criteria Dropdown
         sort_var = ctk.StringVar(value="Frequency")
-        ctk.CTkOptionMenu(filter_row, variable=sort_var, values=["Frequency", "A-Z"], width=110, fg_color=COLORS["dropdown_bg"]).pack(side="left")
+        ctk.CTkOptionMenu(
+            filter_row, variable=sort_var, 
+            values=["Frequency", "Name", "Date Add", "Recently Used", "Random"], 
+            width=130, 
+            fg_color=COLORS["dropdown_bg"], 
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_main"],
+            dropdown_fg_color=COLORS["card_bg"],
+            dropdown_hover_color=COLORS["card_hover"],
+            dropdown_text_color=COLORS["text_main"]
+        ).pack(side="left", padx=(0, 5))
         
-        # "Show System" logic
+        # 2. Sort Order
+        order_var = ctk.StringVar(value="Descending")
+        ctk.CTkOptionMenu(
+            filter_row, variable=order_var, 
+            values=["Descending", "Ascending"], width=120,
+            fg_color=COLORS["dropdown_bg"], 
+            button_color=COLORS["accent"],
+            button_hover_color=COLORS["accent_hover"],
+            text_color=COLORS["text_main"],
+            dropdown_fg_color=COLORS["card_bg"],
+            dropdown_hover_color=COLORS["card_hover"],
+            dropdown_text_color=COLORS["text_main"]
+        ).pack(side="left")
+
+        # 3. System Toggle
         show_sys = ctk.BooleanVar(value=False)
         ctk.CTkSwitch(filter_row, text="Show System", variable=show_sys, text_color=COLORS["text_sub"], progress_color=COLORS["accent"]).pack(side="right")
         Tooltip(filter_row.winfo_children()[-1], "Show auto-assigned tags like Animated/Static")
@@ -280,43 +383,77 @@ class FilterPopUp(BasePopUp):
             if not win.winfo_exists(): return
             for w in scroll.winfo_children(): w.destroy()
             
-            # --- CALCULATE TAG USAGE MANUALLY BASED ON CONTEXT ---
+            # --- 1. Gather Data ---
             usage = {}
-            q = search_var.get().lower()
+            tag_dates: Dict[str, str] = {}
+            tag_total_usage: Dict[str, int] = {}
             
+            q = search_entry.get().lower()
+            key_mode = sort_var.get()
+            
+            # Define data source
+            pool = []
             if context_is_stickers:
-                # Use standard logic for stickers
-                usage = self.app.logic.get_tag_usage()
+                if view_mode == "gallery_pack" and self.app.logic.current_pack_data:
+                    pool = [self.app.logic.current_pack_data]
+                elif view_mode == "gallery_collection" and self.app.logic.current_collection_data:
+                    pool = self.app.logic.current_collection_data.get('packs', [])
+                else:
+                    pool = self.app.library_data
             else:
-                # Manual Count for Packs/Collections
-                # Logic.get_tag_usage() iterates stickers, so we must iterate packs here manually
-                pool = self.app.library_data
                 if view_mode == "collection" and self.app.logic.current_collection_data:
-                     pool = self.app.logic.current_collection_data.get('packs', [])
-                
-                for p in pool:
-                    for t in p.get('tags', []):
-                        usage[t] = usage.get(t, 0) + 1
-                    for t in p.get('custom_collection_tags', []):
-                        usage[t] = usage.get(t, 0) + 1
+                    pool = self.app.logic.current_collection_data.get('packs', [])
+                else:
+                    pool = self.app.library_data
 
+            # Iterate Data to build stats
+            def update_stats(tags, date, usage_val):
+                for t in tags:
+                    usage[t] = usage.get(t, 0) + 1
+                    if date > tag_dates.get(t, ""): 
+                        tag_dates[t] = date
+                    tag_total_usage[t] = tag_total_usage.get(t, 0) + usage_val
+
+            for p in pool:
+                p_date = p.get('added', '0000-00-00')
+                if context_is_stickers:
+                    for s in p.get('stickers', []):
+                        s_usage = s.get('usage_count', 0)
+                        update_stats(s.get('tags', []), p_date, s_usage)
+                else:
+                    p_usage = sum(s.get('usage_count', 0) for s in p.get('stickers', []))
+                    update_stats(p.get('tags', []), p_date, p_usage)
+                    update_stats(p.get('custom_collection_tags', []), p_date, p_usage)
+
+            # --- 2. Filter List ---
             final = []
             for tag, count in usage.items():
-                # 1. Context Filter: Is this tag relevant to our current view?
-                if tag not in valid_tags_for_context:
-                    continue
-
-                # 2. System Filter
+                if tag not in valid_tags_for_context: continue
                 is_auto_system = tag in ["Static", "Animated", "Local"]
-                if not show_sys.get() and (is_auto_system or tag == "NSFW"): 
-                    continue
-                
-                # 3. Search Filter
+                if not show_sys.get() and (is_auto_system or tag == "NSFW"): continue
                 if q and q not in tag.lower(): continue
                 final.append((tag, count))
 
-            if sort_var.get() == "Frequency": final.sort(key=lambda x: x[1], reverse=True)
-            else: final.sort(key=lambda x: x[0].lower())
+            # --- 3. Sort List ---
+            is_desc = (order_var.get() == "Descending")
+            
+            if key_mode == "Frequency":
+                sort_key = lambda x: (x[1], x[0].lower())
+                if is_desc: sort_key = lambda x: (-x[1], x[0].lower())
+                final.sort(key=sort_key)
+                if not is_desc: final.sort(key=lambda x: (x[1], x[0].lower()))
+                
+            elif key_mode == "Random":
+                random.shuffle(final)
+                
+            elif key_mode == "Date Add":
+                final.sort(key=lambda x: tag_dates.get(x[0], ""), reverse=is_desc)
+                
+            elif key_mode == "Recently Used":
+                final.sort(key=lambda x: tag_total_usage.get(x[0], 0), reverse=is_desc)
+                
+            else: 
+                final.sort(key=lambda x: x[0].lower(), reverse=is_desc)
 
             if not final:
                 ctk.CTkLabel(scroll, text="No tags found for this view.", text_color=COLORS["text_sub"]).pack(pady=20)
@@ -326,28 +463,176 @@ class FilterPopUp(BasePopUp):
                 row.pack(fill="x", pady=3)
                 
                 txt_col = COLORS["text_sub"] if is_system_tag(tag) else COLORS["text_main"]
-                ctk.CTkLabel(row, text=f"{format_tag_text(tag)} ({count})", font=("Segoe UI", 12, "bold"), text_color=txt_col).pack(side="left", padx=10, pady=8)
+                
+                extra_info = ""
+                if key_mode == "Recently Used":
+                    extra_info = f" | {tag_total_usage.get(tag,0)} uses"
+                elif key_mode == "Date Add":
+                    d = tag_dates.get(tag, "")
+                    extra_info = f" | {d[:10]}" if d else ""
+                
+                ctk.CTkLabel(row, text=f"{format_tag_text(tag)} ({count}){extra_info}", font=("Segoe UI", 12, "bold"), text_color=txt_col).pack(side="left", padx=10, pady=8)
                 
                 btns = ctk.CTkFrame(row, fg_color="transparent")
                 btns.pack(side="right", padx=5)
                 
-                # Filter Include
+                # Rename Button
+                btn_ren = ctk.CTkButton(
+                    btns, text=f"{ICON_SETTINGS} Rename", width=85, height=24, fg_color=COLORS["btn_neutral"], text_color=COLORS["text_main"],
+                    command=lambda t=tag: self._prompt_rename(t, context_is_stickers, rebuild, parent=win)
+                )
+                btn_ren.pack(side="left", padx=2)
+                
+                # Remove Button
+                btn_rem = ctk.CTkButton(
+                    btns, text=f"{ICON_REMOVE} Remove", width=85, height=24, fg_color=COLORS["btn_negative"], 
+                    command=lambda t=tag: self._prompt_delete(t, context_is_stickers, rebuild, parent=win)
+                )
+                btn_rem.pack(side="left", padx=2)
+
+                # Include
                 btn_inc = ctk.CTkButton(
-                    btns, text=f"{ICON_ADD}", width=28, fg_color=COLORS["btn_positive"], 
+                    btns, text=f"{ICON_ADD} Include", width=80, height=24, fg_color=COLORS["btn_positive"], 
                     command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Include"), win.destroy()]
                 )
                 btn_inc.pack(side="left", padx=2)
-                Tooltip(btn_inc, "Filter: Must have this tag")
                 
-                # Filter Exclude
+                # Exclude
                 btn_exc = ctk.CTkButton(
-                    btns, text="-", width=28, fg_color=COLORS["btn_negative"], 
+                    btns, text="- Exclude", width=80, height=24, fg_color=COLORS["btn_negative"], 
                     command=lambda t=tag: [self.app.logic.add_filter_tag_direct(t, "Exclude"), win.destroy()]
                 )
                 btn_exc.pack(side="left", padx=2)
-                Tooltip(btn_exc, "Filter: Must NOT have this tag")
 
         rebuild()
-        search_var.trace_add("write", rebuild)
+        # Remove variable tracing since we are not using textvariable anymore
+        # Instead, trigger rebuild on sort/filter changes directly
         sort_var.trace_add("write", rebuild)
+        order_var.trace_add("write", rebuild)
         show_sys.trace_add("write", rebuild)
+
+    # ==========================================================================
+    #   HELPER DIALOGS (Rename / Delete)
+    # ==========================================================================
+    
+    def _prompt_rename(self, old_tag, is_stickers, callback, parent=None):
+        """Opens a small modal to rename a tag globally."""
+        master_win = parent if parent else self.app
+        
+        dia = ctk.CTkToplevel(master_win)
+        dia.configure(fg_color=COLORS["bg_main"])
+        dia.title("Rename Tag")
+        dia.geometry("400x180")
+        dia.transient(master_win)
+        dia.grab_set()
+        
+        dia.update_idletasks()
+        x = master_win.winfo_x() + (master_win.winfo_width() // 2) - 200
+        y = master_win.winfo_y() + (master_win.winfo_height() // 2) - 90
+        dia.geometry(f"+{x}+{y}")
+        
+        ctk.CTkLabel(dia, text=f"Rename '{old_tag}'", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(15, 10))
+        
+        entry = ctk.CTkEntry(dia, width=250, fg_color=COLORS["entry_bg"], text_color=COLORS["entry_text"])
+        entry.insert(0, old_tag)
+        entry.pack(pady=10)
+        entry.focus_set()
+        
+        btn_box = ctk.CTkFrame(dia, fg_color="transparent")
+        btn_box.pack(pady=10)
+        
+        def save():
+            new_tag = entry.get().strip()
+            if new_tag and new_tag != old_tag:
+                self._exec_rename_global(old_tag, new_tag, is_stickers)
+                callback()
+            dia.destroy()
+            
+        ctk.CTkButton(btn_box, text="Save", width=100, command=save, fg_color=COLORS["accent"], text_color=COLORS["text_on_accent"]).pack(side="left", padx=10)
+        ctk.CTkButton(btn_box, text="Cancel", width=100, command=dia.destroy, fg_color=COLORS["btn_neutral"], text_color=COLORS["text_main"]).pack(side="left", padx=10)
+
+    def _prompt_delete(self, tag, is_stickers, callback, parent=None):
+        """Opens a confirmation modal to delete a tag globally."""
+        master_win = parent if parent else self.app
+        
+        dia = ctk.CTkToplevel(master_win)
+        dia.configure(fg_color=COLORS["bg_main"])  # Match Theme
+        dia.title("Confirm Remove")
+        dia.geometry("400x160")
+        dia.transient(master_win) # Ensure on top of master
+        dia.grab_set()
+        
+        dia.update_idletasks()
+        x = master_win.winfo_x() + (master_win.winfo_width() // 2) - 200
+        y = master_win.winfo_y() + (master_win.winfo_height() // 2) - 80
+        dia.geometry(f"+{x}+{y}")
+        
+        ctk.CTkLabel(dia, text=f"Remove tag '{tag}'?", font=FONT_TITLE, text_color=COLORS["text_main"]).pack(pady=(20, 5))
+        ctk.CTkLabel(dia, text="This will remove it from ALL items.", font=FONT_SMALL, text_color=COLORS["text_sub"]).pack(pady=(0, 15))
+        
+        btn_box = ctk.CTkFrame(dia, fg_color="transparent")
+        btn_box.pack(pady=10)
+        
+        def confirm():
+            self._exec_delete_global(tag, is_stickers)
+            callback()
+            dia.destroy()
+            
+        ctk.CTkButton(btn_box, text="Confirm", width=100, command=confirm, fg_color=COLORS["btn_negative"], text_color=COLORS["text_on_negative"]).pack(side="left", padx=10)
+        ctk.CTkButton(btn_box, text="Cancel", width=100, command=dia.destroy, fg_color=COLORS["btn_neutral"], text_color=COLORS["text_main"]).pack(side="left", padx=10)
+
+    # ==========================================================================
+    #   INTERNAL LOGIC EXECUTION (Bypassing Controller if needed)
+    # ==========================================================================
+
+    def _exec_rename_global(self, old_tag, new_tag, is_stickers):
+        """Manually iterates library data to rename tags."""
+        count = 0
+        for pack in self.app.library_data:
+            if not is_stickers:
+                if old_tag in pack.get('tags', []):
+                    pack['tags'] = [new_tag if t == old_tag else t for t in pack['tags']]
+                    count += 1
+                if old_tag in pack.get('custom_collection_tags', []):
+                    pack['custom_collection_tags'] = [new_tag if t == old_tag else t for t in pack['custom_collection_tags']]
+                    count += 1
+            else:
+                for sticker in pack.get('stickers', []):
+                    if old_tag in sticker.get('tags', []):
+                        sticker['tags'] = [new_tag if t == old_tag else t for t in sticker['tags']]
+                        count += 1
+        
+        self._safe_save()
+        logger.info(f"Renamed tag '{old_tag}' to '{new_tag}' on {count} items.")
+
+    def _exec_delete_global(self, tag, is_stickers):
+        """Manually iterates library data to delete tags."""
+        count = 0
+        for pack in self.app.library_data:
+            if not is_stickers:
+                if tag in pack.get('tags', []):
+                    pack['tags'].remove(tag)
+                    count += 1
+                if tag in pack.get('custom_collection_tags', []):
+                    pack['custom_collection_tags'].remove(tag)
+                    count += 1
+            else:
+                for sticker in pack.get('stickers', []):
+                    if tag in sticker.get('tags', []):
+                        sticker['tags'].remove(tag)
+                        count += 1
+                        
+        self._safe_save()
+        logger.info(f"Deleted tag '{tag}' from {count} items.")
+        
+    def _safe_save(self):
+        """Attempts to save the library using available methods."""
+        try:
+            if hasattr(self.app.logic, 'lib') and hasattr(self.app.logic.lib, 'save_library_data'):
+                 self.app.logic.lib.save_library_data()
+            elif hasattr(self.app.logic, 'lib') and hasattr(self.app.logic.lib, 'save_data'):
+                 self.app.logic.lib.save_data()
+            else:
+                 self.app.logic.load_library_data() 
+        except Exception as e:
+            logger.error(f"Save failed in FilterPopUp: {e}")
